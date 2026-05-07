@@ -1,0 +1,73 @@
+{
+  "channels": [
+    {
+      "channelId": "10001",
+      "channelNo": "8.1",
+      "callSign": "KCCI",
+      "affiliateName": "CBS",
+      "thumbnail": "/assets/p10001_h_h15_aa.png",
+      "events": [
+        {
+          "startTime": "2026-05-06T22:00Z",
+          "endTime": "2026-05-06T22:30Z",
+          "duration": "30",
+          "thumbnail": "/assets/p1.png",
+          "rating": "TV-PG",
+          "flag": ["new", "cc"],
+          "tags": [],
+          "seriesId": "S1",
+          "programId": "EP00001",
+          "program": {
+            "id": "EP00001",
+            "title": "Local News",
+            "episodeTitle": "Evening Edition",
+            "shortDesc": "Tonight's headlines.",
+            "season": "12",
+            "episode": "187",
+            "genres": ["News"]
+          }
+        },
+        {
+          "startTime": "2026-05-06T22:30Z",
+          "endTime": "2026-05-06T23:00Z",
+          "duration": "30",
+          "rating": "TV-G",
+          "flag": ["live"],
+          "program": {
+            "id": "EP00002",
+            "title": "Game Show Hour",
+            "shortDesc": "Three contestants race the clock.",
+            "genres": ["Game show"]
+          }
+        }
+      ]
+    },
+    {
+      "channelId": "10002",
+      "channelNo": "13.1",
+      "callSign": "WHO",
+      "affiliateName": "NBC",
+      "events": [
+        {
+          "startTime": "2026-05-06T22:00:00Z",
+          "endTime": "2026-05-06T23:00:00Z",
+          "duration": "60",
+          "flag": [],
+          "program": {
+            "id": "EP00003",
+            "title": "Movie Night",
+            "longDesc": "A long-form description.",
+            "releaseYear": "2024",
+            "genres": ["Movie", "Drama"]
+          }
+        }
+      ]
+    },
+    {
+      "channelId": "10003",
+      "channelNo": "5.1",
+      "callSign": "",
+      "events": []
+    }
+  ]
+}

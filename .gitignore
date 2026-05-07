@@ -1,0 +1,19 @@
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.build/
+Package.resolved
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Frameworks/ holds the TVVLCKit XCFramework (~600 MB).
+# Fetch with scripts/fetch-tvvlckit.sh after cloning.
+Frameworks/

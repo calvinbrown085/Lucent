@@ -1,0 +1,647 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0E7A056A2FAC140A007C942F /* TVCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0E7A056C2FAC140A007C942F /* TVCore */; };
+		0E7A05712FAC140A007C942F /* TVVLCKit.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7A05702FAC140A007C942F /* TVVLCKit.xcframework */; };
+		0E7A05722FAC140A007C942F /* TVVLCKit.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 0E7A05702FAC140A007C942F /* TVVLCKit.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0E7A052B2FAC140A007C942F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0E7A05112FAC1408007C942F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0E7A05182FAC1408007C942F;
+			remoteInfo = Lucent;
+		};
+		0E7A05352FAC140A007C942F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0E7A05112FAC1408007C942F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 0E7A05182FAC1408007C942F;
+			remoteInfo = Lucent;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0E7A05732FAC140A007C942F /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				0E7A05722FAC140A007C942F /* TVVLCKit.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0E7A05192FAC1408007C942F /* Lucent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Lucent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0E7A052A2FAC140A007C942F /* LucentTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LucentTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0E7A05342FAC140A007C942F /* LucentUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LucentUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0E7A05702FAC140A007C942F /* TVVLCKit.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = TVVLCKit.xcframework; path = ../Frameworks/TVVLCKit.xcframework; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		0E7A053C2FAC140A007C942F /* Exceptions for "Lucent" folder in "Lucent" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 0E7A05182FAC1408007C942F /* Lucent */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		0E7A051B2FAC1408007C942F /* Lucent */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0E7A053C2FAC140A007C942F /* Exceptions for "Lucent" folder in "Lucent" target */,
+			);
+			path = Lucent;
+			sourceTree = "<group>";
+		};
+		0E7A052D2FAC140A007C942F /* LucentTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LucentTests;
+			sourceTree = "<group>";
+		};
+		0E7A05372FAC140A007C942F /* LucentUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = LucentUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0E7A05162FAC1408007C942F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0E7A05712FAC140A007C942F /* TVVLCKit.xcframework in Frameworks */,
+				0E7A056A2FAC140A007C942F /* TVCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05272FAC140A007C942F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05312FAC140A007C942F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0E7A05102FAC1408007C942F = {
+			isa = PBXGroup;
+			children = (
+				0E7A051B2FAC1408007C942F /* Lucent */,
+				0E7A052D2FAC140A007C942F /* LucentTests */,
+				0E7A05372FAC140A007C942F /* LucentUITests */,
+				0E7A05742FAC140A007C942F /* Frameworks */,
+				0E7A051A2FAC1408007C942F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		0E7A051A2FAC1408007C942F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0E7A05192FAC1408007C942F /* Lucent.app */,
+				0E7A052A2FAC140A007C942F /* LucentTests.xctest */,
+				0E7A05342FAC140A007C942F /* LucentUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		0E7A05742FAC140A007C942F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0E7A05702FAC140A007C942F /* TVVLCKit.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0E7A05182FAC1408007C942F /* Lucent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E7A053D2FAC140A007C942F /* Build configuration list for PBXNativeTarget "Lucent" */;
+			buildPhases = (
+				0E7A05152FAC1408007C942F /* Sources */,
+				0E7A05162FAC1408007C942F /* Frameworks */,
+				0E7A05172FAC1408007C942F /* Resources */,
+				0E7A05732FAC140A007C942F /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				0E7A051B2FAC1408007C942F /* Lucent */,
+			);
+			name = Lucent;
+			packageProductDependencies = (
+				0E7A056C2FAC140A007C942F /* TVCore */,
+			);
+			productName = Lucent;
+			productReference = 0E7A05192FAC1408007C942F /* Lucent.app */;
+			productType = "com.apple.product-type.application";
+		};
+		0E7A05292FAC140A007C942F /* LucentTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E7A05422FAC140A007C942F /* Build configuration list for PBXNativeTarget "LucentTests" */;
+			buildPhases = (
+				0E7A05262FAC140A007C942F /* Sources */,
+				0E7A05272FAC140A007C942F /* Frameworks */,
+				0E7A05282FAC140A007C942F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0E7A052C2FAC140A007C942F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0E7A052D2FAC140A007C942F /* LucentTests */,
+			);
+			name = LucentTests;
+			packageProductDependencies = (
+			);
+			productName = LucentTests;
+			productReference = 0E7A052A2FAC140A007C942F /* LucentTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		0E7A05332FAC140A007C942F /* LucentUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E7A05452FAC140A007C942F /* Build configuration list for PBXNativeTarget "LucentUITests" */;
+			buildPhases = (
+				0E7A05302FAC140A007C942F /* Sources */,
+				0E7A05312FAC140A007C942F /* Frameworks */,
+				0E7A05322FAC140A007C942F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0E7A05362FAC140A007C942F /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				0E7A05372FAC140A007C942F /* LucentUITests */,
+			);
+			name = LucentUITests;
+			packageProductDependencies = (
+			);
+			productName = LucentUITests;
+			productReference = 0E7A05342FAC140A007C942F /* LucentUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		0E7A05112FAC1408007C942F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2620;
+				LastUpgradeCheck = 2620;
+				TargetAttributes = {
+					0E7A05182FAC1408007C942F = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					0E7A05292FAC140A007C942F = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 0E7A05182FAC1408007C942F;
+					};
+					0E7A05332FAC140A007C942F = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 0E7A05182FAC1408007C942F;
+					};
+				};
+			};
+			buildConfigurationList = 0E7A05142FAC1408007C942F /* Build configuration list for PBXProject "Lucent" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 0E7A05102FAC1408007C942F;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0E7A056B2FAC140A007C942F /* XCLocalSwiftPackageReference "../TVCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0E7A051A2FAC1408007C942F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				0E7A05182FAC1408007C942F /* Lucent */,
+				0E7A05292FAC140A007C942F /* LucentTests */,
+				0E7A05332FAC140A007C942F /* LucentUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		0E7A05172FAC1408007C942F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05282FAC140A007C942F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05322FAC140A007C942F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		0E7A05152FAC1408007C942F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05262FAC140A007C942F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		0E7A05302FAC140A007C942F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0E7A052C2FAC140A007C942F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0E7A05182FAC1408007C942F /* Lucent */;
+			targetProxy = 0E7A052B2FAC140A007C942F /* PBXContainerItemProxy */;
+		};
+		0E7A05362FAC140A007C942F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 0E7A05182FAC1408007C942F /* Lucent */;
+			targetProxy = 0E7A05352FAC140A007C942F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0E7A053E2FAC140A007C942F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lucent/Lucent.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lucent/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.Lucent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Debug;
+		};
+		0E7A053F2FAC140A007C942F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Lucent/Lucent.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Lucent/Info.plist;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Automatic;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.Lucent;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Release;
+		};
+		0E7A05402FAC140A007C942F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = appletvos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TVOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		0E7A05412FAC140A007C942F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = appletvos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				TVOS_DEPLOYMENT_TARGET = 26.2;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		0E7A05432FAC140A007C942F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.LucentTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lucent.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lucent";
+				TVOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Debug;
+		};
+		0E7A05442FAC140A007C942F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.LucentTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Lucent.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Lucent";
+				TVOS_DEPLOYMENT_TARGET = 26.2;
+			};
+			name = Release;
+		};
+		0E7A05462FAC140A007C942F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.LucentUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = Lucent;
+			};
+			name = Debug;
+		};
+		0E7A05472FAC140A007C942F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZM4J56DC3Q;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.LucentUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TEST_TARGET_NAME = Lucent;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0E7A05142FAC1408007C942F /* Build configuration list for PBXProject "Lucent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E7A05402FAC140A007C942F /* Debug */,
+				0E7A05412FAC140A007C942F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0E7A053D2FAC140A007C942F /* Build configuration list for PBXNativeTarget "Lucent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E7A053E2FAC140A007C942F /* Debug */,
+				0E7A053F2FAC140A007C942F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0E7A05422FAC140A007C942F /* Build configuration list for PBXNativeTarget "LucentTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E7A05432FAC140A007C942F /* Debug */,
+				0E7A05442FAC140A007C942F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0E7A05452FAC140A007C942F /* Build configuration list for PBXNativeTarget "LucentUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0E7A05462FAC140A007C942F /* Debug */,
+				0E7A05472FAC140A007C942F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0E7A056B2FAC140A007C942F /* XCLocalSwiftPackageReference "../TVCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../TVCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0E7A056C2FAC140A007C942F /* TVCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TVCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 0E7A05112FAC1408007C942F /* Project object */;
+}

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tv generator-info-name="lucent-test-fixture">
+  <channel id="KCCI.com">
+    <display-name>KCCI-HD</display-name>
+    <display-name>8.1</display-name>
+    <icon src="https://example.com/logos/kcci.png"/>
+  </channel>
+  <channel id="WHO.com">
+    <display-name>WHO-HD</display-name>
+  </channel>
+
+  <!-- Pre-DST: Sun 2026-03-08 01:30 CST -->
+  <programme channel="KCCI.com" start="20260308013000 -0600" stop="20260308020000 -0600">
+    <title>Late News</title>
+    <sub-title>Overnight Edition</sub-title>
+    <desc>Local headlines.</desc>
+    <category>News</category>
+    <new/>
+  </programme>
+
+  <!-- DST jump: this hour does not exist locally; XMLTV gives explicit offset so it parses fine. -->
+  <programme channel="KCCI.com" start="20260308030000 -0500" stop="20260308040000 -0500">
+    <title>Sunday Morning</title>
+    <desc>Magazine show.</desc>
+    <category>News</category>
+    <category>Magazine</category>
+    <live/>
+  </programme>
+
+  <programme channel="KCCI.com" start="20260308040000 -0500" stop="20260308050000 -0500">
+    <title>Face the Nation</title>
+    <desc>Political talk.</desc>
+    <category>Talk</category>
+  </programme>
+
+  <programme channel="WHO.com" start="20260308030000 -0500" stop="20260308053000 -0500">
+    <title>Today on NBC</title>
+    <sub-title>Hour One</sub-title>
+    <desc>News and weather.</desc>
+    <category>News</category>
+    <rating system="VCHIP"><value>TV-PG</value></rating>
+  </programme>
+</tv>

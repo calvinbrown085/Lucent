@@ -10,26 +10,48 @@ struct MiniGuideOverlay: View {
     let onClose: () -> Void
 
     @Environment(AppModel.self) private var appModel
+    @Environment(\.layoutMetrics) private var metrics
     @State private var nowPlayingByChannelID: [String: Program] = [:]
     @State private var refreshTask: Task<Void, Never>?
+
+    #if os(tvOS)
     @FocusState private var focusedChannelID: String?
+    #else
+    @State private var selectedChannelID: String?
+    #endif
 
     var body: some View {
-        HStack(spacing: 0) {
-            Spacer(minLength: 0)
-            panel
-                .frame(width: 540)
-                .padding(.trailing, 60)
-                .padding(.vertical, 60)
+        Group {
+            if let panelWidth = metrics.miniGuideWidth {
+                // tvOS / iPad: right-anchored side panel rendered as a sibling layer.
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    panel
+                        .frame(width: panelWidth)
+                        .padding(.trailing, 60)
+                        .padding(.vertical, 60)
+                }
+                .ignoresSafeArea()
+            } else {
+                // iPhone: full-width sheet content.
+                panel
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 16)
+            }
         }
-        .ignoresSafeArea()
         .task { await refreshNowPlaying() }
         .onAppear {
             startPeriodicRefresh()
+            #if os(tvOS)
             focusedChannelID = activeChannelID ?? appModel.visibleChannels.first?.id
+            #else
+            selectedChannelID = activeChannelID ?? appModel.visibleChannels.first?.id
+            #endif
         }
         .onDisappear { refreshTask?.cancel() }
+        #if os(tvOS)
         .onExitCommand { onClose() }
+        #endif
     }
 
     private var panel: some View {
@@ -40,15 +62,8 @@ struct MiniGuideOverlay: View {
                 ScrollView {
                     LazyVStack(spacing: 4) {
                         ForEach(appModel.visibleChannels) { channel in
-                            MiniGuideRow(
-                                channel: channel,
-                                program: nowPlayingByChannelID[channel.id],
-                                isActive: channel.id == activeChannelID
-                            ) {
-                                onTune(channel)
-                            }
-                            .id(channel.id)
-                            .focused($focusedChannelID, equals: channel.id)
+                            row(for: channel)
+                                .id(channel.id)
                         }
                     }
                     .padding(.vertical, 12)
@@ -67,6 +82,31 @@ struct MiniGuideOverlay: View {
         }
     }
 
+    @ViewBuilder
+    private func row(for channel: Channel) -> some View {
+        #if os(tvOS)
+        MiniGuideRow(
+            channel: channel,
+            program: nowPlayingByChannelID[channel.id],
+            isActive: channel.id == activeChannelID,
+            isSelected: false
+        ) {
+            onTune(channel)
+        }
+        .focused($focusedChannelID, equals: channel.id)
+        #else
+        MiniGuideRow(
+            channel: channel,
+            program: nowPlayingByChannelID[channel.id],
+            isActive: channel.id == activeChannelID,
+            isSelected: selectedChannelID == channel.id
+        ) {
+            selectedChannelID = channel.id
+            onTune(channel)
+        }
+        #endif
+    }
+
     private var header: some View {
         HStack(spacing: 12) {
             Image(systemName: "tv")
@@ -79,6 +119,11 @@ struct MiniGuideOverlay: View {
             Text("\(appModel.visibleChannels.count) channels")
                 .font(.caption)
                 .foregroundStyle(GuideTokens.text3)
+            #if !os(tvOS)
+            Button("Done", action: onClose)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            #endif
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 18)
@@ -109,9 +154,15 @@ private struct MiniGuideRow: View {
     let channel: Channel
     let program: Program?
     let isActive: Bool
+    let isSelected: Bool
     let onSelect: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    #if os(tvOS)
+    @Environment(\.isFocused) private var environmentFocused
+    private var isHighlighted: Bool { environmentFocused }
+    #else
+    private var isHighlighted: Bool { isSelected }
+    #endif
 
     var body: some View {
         Button(action: onSelect) {
@@ -119,7 +170,7 @@ private struct MiniGuideRow: View {
                 Text(channel.guideNumber)
                     .font(.system(.body, design: .rounded).weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(isFocused ? .white : GuideTokens.text)
+                    .foregroundStyle(isHighlighted ? .white : GuideTokens.text)
                     .frame(width: 64, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -127,7 +178,7 @@ private struct MiniGuideRow: View {
                         Text(channel.guideName)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
-                            .foregroundStyle(isFocused ? .white : GuideTokens.text2)
+                            .foregroundStyle(isHighlighted ? .white : GuideTokens.text2)
                         if isActive {
                             Image(systemName: "dot.radiowaves.left.and.right")
                                 .font(.caption2)
@@ -138,7 +189,7 @@ private struct MiniGuideRow: View {
                         HStack(spacing: 6) {
                             Text(program.title)
                                 .lineLimit(1)
-                                .foregroundStyle(isFocused ? Color.white.opacity(0.9) : GuideTokens.text3)
+                                .foregroundStyle(isHighlighted ? Color.white.opacity(0.9) : GuideTokens.text3)
                             if let mins = minutesRemaining(for: program), mins > 0 {
                                 Text("· \(mins)m left")
                                     .foregroundStyle(GuideTokens.text4)

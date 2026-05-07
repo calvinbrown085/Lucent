@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(TVVLCKit)
 import TVVLCKit
+#elseif canImport(MobileVLCKit)
+import MobileVLCKit
+#endif
 
 /// Renders the coordinator's active `VLCMediaPlayer` into a UIView.
 /// On every update, if the active player exists and isn't already drawing

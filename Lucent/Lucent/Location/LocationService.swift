@@ -16,11 +16,19 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         var errorDescription: String? {
             switch self {
             case .denied: return "Location permission denied. Enter a postal code in Settings."
-            case .restricted: return "Location is restricted on this Apple TV."
+            case .restricted: return "Location is restricted on \(Self.deviceNounForError)."
             case .unavailable: return "Location is unavailable right now."
             case .noPostalCode: return "Couldn't determine a postal code for this location."
             case .underlying(let e): return e.localizedDescription
             }
+        }
+
+        private static var deviceNounForError: String {
+            #if os(tvOS)
+            return "this Apple TV"
+            #else
+            return "this device"
+            #endif
         }
     }
 

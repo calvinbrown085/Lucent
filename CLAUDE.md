@@ -40,21 +40,23 @@ Lucent/                           — repo root
 │       ├── Networking/           — HDHRClient, HDHRDiscovery
 │       ├── EPG/                  — EPGStore (GRDB), EPGService, XMLTVParser
 │       └── Guide/Gracenote/      — GracenoteAPIClient + IngestService
-├── Frameworks/                   — gitignored, holds TVVLCKit.xcframework (~600 MB)
-└── scripts/fetch-tvvlckit.sh     — populates Frameworks/ after clone
+├── Frameworks/                   — gitignored, holds TVVLCKit.xcframework (~600 MB) + MobileVLCKit.xcframework (~264 MB)
+├── scripts/fetch-tvvlckit.sh     — populates Frameworks/ for tvOS builds
+└── scripts/fetch-mobilevlckit.sh — populates Frameworks/ for iOS / iPadOS builds
 ```
 
 The Xcode project uses `PBXFileSystemSynchronizedRootGroup` for `Lucent/Lucent/`, so **new Swift files under that folder are automatically target members — no pbxproj edits needed for source files**. Swift package products and frameworks still need explicit pbxproj entries.
 
-`TVCore` is a local SwiftPM package with platforms `tvOS 26 / iOS 18 / macOS 15`, kept source-portable (no UIKit/AppKit/TVVLCKit imports). The player layer lives in the **app target** because TVVLCKit is platform-specific (TVVLCKit on tvOS, MobileVLCKit on iOS); a future iOS port gets its own coordinator.
+`TVCore` is a local SwiftPM package with platforms `tvOS 26 / iOS 18 / macOS 15`, kept source-portable (no UIKit/AppKit/TVVLCKit imports). The player layer lives in the **app target** because VLCKit is platform-specific (TVVLCKit on tvOS, MobileVLCKit on iOS / iPadOS) — `PlayerCoordinator.swift` and `VLCPlayerView.swift` use `#if canImport(TVVLCKit)` / `#elseif canImport(MobileVLCKit)` so the same files build for both.
 
 ## First-time setup
 
 ```bash
-scripts/fetch-tvvlckit.sh
+scripts/fetch-tvvlckit.sh        # tvOS builds
+scripts/fetch-mobilevlckit.sh    # iOS / iPadOS builds (~264 MB)
 ```
 
-Downloads TVVLCKit 3.7.3 from videolan.org and extracts it to `Frameworks/TVVLCKit.xcframework/`. The Xcode project references it via `../Frameworks/TVVLCKit.xcframework` (Linked + Embed-Sign in the app target).
+Downloads VLCKit 3.7.3 from videolan.org and extracts it to `Frameworks/`. The Xcode project references both XCFrameworks via `../Frameworks/{TVVLCKit,MobileVLCKit}.xcframework`, with `platformFilter` on the build files so the tvOS slice only links TVVLCKit and the iOS slice only links MobileVLCKit.
 
 ## Build, test, run
 

@@ -89,6 +89,7 @@ private struct FocusedItem: Equatable, Hashable {
 
 struct GuideView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.layoutMetrics) private var metrics
 
     @State private var viewportStart: Date = Self.snapToHalfHour(.now)
     @State private var presentedChannel: Channel?
@@ -106,12 +107,40 @@ struct GuideView: View {
     @State private var pendingTune: Task<Void, Never>?
 
     var body: some View {
+        Group {
+            if metrics.useTimelineGuide {
+                TimelineGuideView(
+                    onTune: { ch in
+                        appModel.tune(to: ch)
+                        presentedChannel = ch
+                    },
+                    onShowProgramDetail: { detailProgram = $0 }
+                )
+            } else {
+                gridBody
+            }
+        }
+        .task { nowLinePulse = true }
+        .onChange(of: focusedChannel?.id) { _, newID in
+            scheduleTune(channelID: newID)
+        }
+        .fullScreenCover(item: $presentedChannel) { channel in
+            NowPlayingView(channel: channel)
+                .environment(appModel)
+        }
+        .sheet(item: $detailProgram) { program in
+            ProgramDetailView(program: program)
+        }
+    }
+
+    @ViewBuilder
+    private var gridBody: some View {
         ZStack {
             backgroundGradient.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
                 controls
-                    .padding(.horizontal, GuideTokens.stagePadding)
+                    .padding(.horizontal, metrics.contentHorizontalPadding)
                     .padding(.top, 28)
                     .padding(.bottom, 18)
 
@@ -125,25 +154,14 @@ struct GuideView: View {
                     },
                     onMoreInfo: { detailProgram = $0 }
                 )
-                .padding(.horizontal, GuideTokens.stagePadding)
-                .frame(height: GuideTokens.heroHeight)
+                .padding(.horizontal, metrics.contentHorizontalPadding)
+                .frame(height: metrics.heroHeight)
 
                 Spacer(minLength: 24)
 
                 gridSection
-                    .padding(.leading, GuideTokens.stagePadding)
+                    .padding(.leading, metrics.contentHorizontalPadding)
             }
-        }
-        .task { nowLinePulse = true }
-        .onChange(of: focusedChannel?.id) { _, newID in
-            scheduleTune(channelID: newID)
-        }
-        .fullScreenCover(item: $presentedChannel) { channel in
-            NowPlayingView(channel: channel)
-                .environment(appModel)
-        }
-        .sheet(item: $detailProgram) { program in
-            ProgramDetailView(program: program)
         }
     }
 
@@ -233,21 +251,7 @@ struct GuideView: View {
                 ZStack(alignment: .topLeading) {
                     LazyVStack(alignment: .leading, spacing: GuideTokens.rowGap) {
                         ForEach(appModel.visibleChannels.prefix(64)) { channel in
-                            GuideRowView(
-                                channel: channel,
-                                viewportStart: viewportStart,
-                                windowEnd: windowEnd,
-                                onTapAiring: { ch in
-                                    appModel.tune(to: ch)
-                                    presentedChannel = ch
-                                },
-                                onTapFuture: { detailProgram = $0 },
-                                onFocus: { program, ch in
-                                    focusedProgram = program
-                                    focusedChannel = ch
-                                }
-                            )
-                            .focusSection()
+                            row(for: channel, windowEnd: windowEnd)
                         }
                     }
                     .padding(.bottom, 60)
@@ -259,10 +263,33 @@ struct GuideView: View {
         }
     }
 
+    @ViewBuilder
+    private func row(for channel: Channel, windowEnd: Date) -> some View {
+        let view = GuideRowView(
+            channel: channel,
+            viewportStart: viewportStart,
+            windowEnd: windowEnd,
+            onTapAiring: { ch in
+                appModel.tune(to: ch)
+                presentedChannel = ch
+            },
+            onTapFuture: { detailProgram = $0 },
+            onFocus: { program, ch in
+                focusedProgram = program
+                focusedChannel = ch
+            }
+        )
+        #if os(tvOS)
+        view.focusSection()
+        #else
+        view
+        #endif
+    }
+
     /// Vertical red bar at the current time, layered above the rows.
     private var nowLineOverlay: some View {
-        let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * GuideTokens.pxPerMinute
-        let visibleWidth = CGFloat(GuideTokens.visibleSlots) * GuideTokens.columnWidth
+        let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
+        let visibleWidth = CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth
         let isInWindow = nowOffset >= 0 && nowOffset <= visibleWidth
         return Group {
             if isInWindow {
@@ -273,7 +300,7 @@ struct GuideView: View {
                     .opacity(nowLinePulse ? 1.0 : 0.85)
                     .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: nowLinePulse)
                     .frame(maxHeight: .infinity, alignment: .top)
-                    .offset(x: GuideTokens.channelRailWidth + nowOffset)
+                    .offset(x: metrics.guideChannelRailWidth + nowOffset)
             }
         }
     }
@@ -292,23 +319,25 @@ private struct GuideTimeHeader: View {
     let slotCount: Int
     let pulse: Bool
 
+    @Environment(\.layoutMetrics) private var metrics
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
-                Color.clear.frame(width: GuideTokens.channelRailWidth)
+                Color.clear.frame(width: metrics.guideChannelRailWidth)
                 ForEach(0..<slotCount, id: \.self) { i in
                     let date = viewportStart.addingTimeInterval(Double(i) * 30 * 60)
                     Text(date, format: .dateTime.hour().minute())
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundStyle(GuideTokens.text3)
                         .monospacedDigit()
-                        .frame(width: GuideTokens.columnWidth, alignment: .leading)
+                        .frame(width: metrics.guideTimeColumnWidth, alignment: .leading)
                 }
             }
 
             // Floating red "now" pill
-            let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * GuideTokens.pxPerMinute
-            let visibleWidth = CGFloat(slotCount) * GuideTokens.columnWidth
+            let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
+            let visibleWidth = CGFloat(slotCount) * metrics.guideTimeColumnWidth
             if nowOffset >= 0 && nowOffset <= visibleWidth {
                 Text(Date.now, format: .dateTime.hour().minute())
                     .font(.system(size: 16, weight: .heavy))
@@ -318,7 +347,7 @@ private struct GuideTimeHeader: View {
                     .padding(.vertical, 3)
                     .background(GuideTokens.live, in: .rect(cornerRadius: 6))
                     .shadow(color: GuideTokens.live.opacity(0.5), radius: 8, x: 0, y: 0)
-                    .offset(x: GuideTokens.channelRailWidth + nowOffset - 24, y: -4)
+                    .offset(x: metrics.guideChannelRailWidth + nowOffset - 24, y: -4)
             }
         }
         .frame(height: 32, alignment: .topLeading)
@@ -336,13 +365,14 @@ private struct GuideRowView: View {
     let onFocus: (Program, Channel) -> Void
 
     @Environment(AppModel.self) private var appModel
+    @Environment(\.layoutMetrics) private var metrics
     @State private var programs: [Program] = []
     @State private var didLoad: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
             GuideChannelRailCell(channel: channel)
-                .frame(width: GuideTokens.channelRailWidth, height: GuideTokens.rowHeight, alignment: .leading)
+                .frame(width: metrics.guideChannelRailWidth, height: metrics.guideRowHeight, alignment: .leading)
 
             ZStack(alignment: .topLeading) {
                 if didLoad && programs.isEmpty {
@@ -369,8 +399,8 @@ private struct GuideRowView: View {
                 }
             }
             .frame(
-                width: CGFloat(GuideTokens.visibleSlots) * GuideTokens.columnWidth,
-                height: GuideTokens.rowHeight,
+                width: CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth,
+                height: metrics.guideRowHeight,
                 alignment: .topLeading
             )
             .clipped()
@@ -482,7 +512,16 @@ private struct GuideProgramCell: View {
     let onTap: () -> Void
     let onFocusAcquired: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @Environment(\.layoutMetrics) private var metrics
+
+    #if os(tvOS)
+    @Environment(\.isFocused) private var environmentFocused
+    private var isHighlighted: Bool { environmentFocused }
+    #else
+    @State private var isHovered: Bool = false
+    @State private var isPressed: Bool = false
+    private var isHighlighted: Bool { isHovered || isPressed }
+    #endif
 
     var body: some View {
         Button(action: onTap) {
@@ -490,19 +529,27 @@ private struct GuideProgramCell: View {
         }
         .buttonStyle(.plain)
         .offset(x: offsetX, y: 0)
-        .scaleEffect(isFocused ? 1.04 : 1.0, anchor: .leading)
-        .zIndex(isFocused ? 3 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
-        .onChange(of: isFocused) { _, newValue in
+        .scaleEffect(isHighlighted ? 1.04 : 1.0, anchor: .leading)
+        .zIndex(isHighlighted ? 3 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHighlighted)
+        .onChange(of: isHighlighted) { _, newValue in
             if newValue { onFocusAcquired() }
         }
+        #if !os(tvOS)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        #endif
     }
 
     @ViewBuilder
     private var cellBody: some View {
         let tint = ProgramType.from(program)
-        let textColor = isFocused ? Color.white : GuideTokens.text
-        let subTextColor = isFocused ? Color.white.opacity(0.78) : GuideTokens.text3
+        let textColor = isHighlighted ? Color.white : GuideTokens.text
+        let subTextColor = isHighlighted ? Color.white.opacity(0.78) : GuideTokens.text3
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -522,11 +569,11 @@ private struct GuideProgramCell: View {
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .background(
-                            isFocused
+                            isHighlighted
                                 ? AnyShapeStyle(Color.black.opacity(0.4))
                                 : AnyShapeStyle(GuideTokens.accent.opacity(0.18))
                         )
-                        .foregroundStyle(isFocused ? Color.white : GuideTokens.accent2)
+                        .foregroundStyle(isHighlighted ? Color.white : GuideTokens.accent2)
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
@@ -544,27 +591,27 @@ private struct GuideProgramCell: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .frame(width: width, height: GuideTokens.rowHeight, alignment: .topLeading)
+        .frame(width: width, height: metrics.guideRowHeight, alignment: .topLeading)
         .background(cellBackground(tint: tint))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(
-                    isFocused ? GuideTokens.focusRing : GuideTokens.border,
-                    lineWidth: isFocused ? 2 : 1
+                    isHighlighted ? GuideTokens.focusRing : GuideTokens.border,
+                    lineWidth: isHighlighted ? 2 : 1
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(
-            color: isFocused ? .black.opacity(0.5) : .clear,
-            radius: isFocused ? 20 : 0,
+            color: isHighlighted ? .black.opacity(0.5) : .clear,
+            radius: isHighlighted ? 20 : 0,
             x: 0,
-            y: isFocused ? 16 : 0
+            y: isHighlighted ? 16 : 0
         )
     }
 
     @ViewBuilder
     private func cellBackground(tint: ProgramType) -> some View {
-        if isFocused {
+        if isHighlighted {
             tint.gradient
         } else {
             GuideTokens.surface
@@ -581,11 +628,11 @@ private struct GuideProgramCell: View {
 
     /// Cells fill their time slot minus a 6pt gap so adjacent cells don't touch.
     private var width: CGFloat {
-        max(40, CGFloat(clampedStop.timeIntervalSince(clampedStart) / 60) * GuideTokens.pxPerMinute - 6)
+        max(40, CGFloat(clampedStop.timeIntervalSince(clampedStart) / 60) * metrics.pxPerMinute - 6)
     }
 
     private var offsetX: CGFloat {
-        CGFloat(clampedStart.timeIntervalSince(viewportStart) / 60) * GuideTokens.pxPerMinute
+        CGFloat(clampedStart.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
     }
 }
 
@@ -597,6 +644,8 @@ private struct GuideHeroCardView: View {
     let showLivePreview: Bool
     let onWatchLive: (Channel) -> Void
     let onMoreInfo: (Program) -> Void
+
+    @Environment(\.layoutMetrics) private var metrics
 
     var body: some View {
         if let program, let channel {
@@ -652,7 +701,7 @@ private struct GuideHeroCardView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 16)
         }
-        .frame(width: GuideTokens.heroArtSize.width, height: GuideTokens.heroArtSize.height)
+        .frame(width: metrics.heroCardSize.width, height: metrics.heroCardSize.height)
         .clipShape(RoundedRectangle(cornerRadius: 18))
         .shadow(color: .black.opacity(0.5), radius: 24, x: 0, y: 16)
         .animation(.easeInOut(duration: 0.25), value: showLivePreview)
@@ -747,12 +796,12 @@ private struct GuideHeroCardView: View {
         HStack(alignment: .center, spacing: 24) {
             RoundedRectangle(cornerRadius: 18)
                 .fill(GuideTokens.surface)
-                .frame(width: GuideTokens.heroArtSize.width, height: GuideTokens.heroArtSize.height)
+                .frame(width: metrics.heroCardSize.width, height: metrics.heroCardSize.height)
             VStack(alignment: .leading, spacing: 12) {
                 Text("Tonight's Guide")
                     .font(.system(size: 56, weight: .bold))
                     .tracking(-0.6)
-                Text("Move focus to a program for details.")
+                Text("Pick a program for details.")
                     .font(.system(size: 22))
                     .foregroundStyle(GuideTokens.text3)
             }
@@ -774,7 +823,11 @@ private struct GuideHeroCardView: View {
 // MARK: - Hero buttons
 
 private struct GuideHeroPrimaryButtonStyle: ButtonStyle {
+    #if os(tvOS)
     @Environment(\.isFocused) private var envFocused
+    #else
+    private let envFocused = false
+    #endif
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(GuideTokens.bg)
@@ -796,7 +849,11 @@ private struct GuideHeroPrimaryButtonStyle: ButtonStyle {
 }
 
 private struct GuideHeroSecondaryButtonStyle: ButtonStyle {
+    #if os(tvOS)
     @Environment(\.isFocused) private var envFocused
+    #else
+    private let envFocused = false
+    #endif
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(GuideTokens.text)

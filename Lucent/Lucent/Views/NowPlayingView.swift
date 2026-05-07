@@ -5,12 +5,26 @@ struct NowPlayingView: View {
     let channel: Channel
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.layoutMetrics) private var metrics
     @State private var nowPlaying: Program?
     @State private var overlayVisible = true
     @State private var hideTask: Task<Void, Never>?
     @State private var miniGuideOpen = false
     @State private var miniGuideHideTask: Task<Void, Never>?
     @State private var sleepDialogPresented = false
+
+    /// True when the mini-guide should be presented as a modal sheet
+    /// (iPhone) rather than as a sibling overlay panel (tvOS / iPad).
+    private var miniGuideAsSheet: Bool { metrics.miniGuideWidth == nil }
+
+    private var miniGuideSheetBinding: Binding<Bool> {
+        Binding(
+            get: { miniGuideOpen && miniGuideAsSheet },
+            set: { newValue in
+                if !newValue { closeMiniGuide() }
+            }
+        )
+    }
 
     /// Mini-guide auto-hide window. Longer than the bottom overlay's 3s because
     /// the user is actively browsing.
@@ -39,18 +53,21 @@ struct NowPlayingView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
+            #if os(tvOS)
             if miniGuideOpen {
-                MiniGuideOverlay(
-                    activeChannelID: appModel.player.activeChannel?.id ?? channel.id,
-                    onTune: { selected in
-                        appModel.tune(to: selected)
-                        closeMiniGuide()
-                    },
-                    onClose: { closeMiniGuide() }
-                )
-                .transition(.opacity.combined(with: .move(edge: .trailing)))
-                .zIndex(1)
+                miniGuideOverlayView
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .zIndex(1)
             }
+            #else
+            // iPad: render as sibling overlay panel (matches tvOS).
+            // iPhone: presented via .sheet below — skip inline rendering.
+            if miniGuideOpen, !miniGuideAsSheet {
+                miniGuideOverlayView
+                    .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    .zIndex(1)
+            }
+            #endif
 
             if appModel.sleepTimer.isWarning {
                 sleepWarningOverlay
@@ -75,51 +92,133 @@ struct NowPlayingView: View {
         .task {
             await refreshNowPlaying()
         }
+        #if os(tvOS)
         .onMoveCommand { direction in
-            if appModel.sleepTimer.isWarning {
-                appModel.sleepTimer.dismissWarning()
-                showOverlay()
-                return
-            }
-            if miniGuideOpen {
-                if direction == .left {
-                    closeMiniGuide()
-                    return
-                }
-                resetMiniGuideAutoHide()
-                return
-            }
-            switch direction {
-            case .up:
-                appModel.tuneAdjacent(offset: -1)
-            case .down:
-                appModel.tuneAdjacent(offset: 1)
-            case .right:
-                openMiniGuide()
-                return
-            default:
-                break
-            }
-            showOverlay()
+            handleMove(direction)
         }
+        .onExitCommand {
+            handleExit()
+        }
+        #else
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    handleSwipe(translation: value.translation)
+                }
+        )
+        #endif
         .onTapGesture {
             if appModel.sleepTimer.isWarning {
                 appModel.sleepTimer.dismissWarning()
             }
             showOverlay()
         }
-        .onExitCommand {
-            if miniGuideOpen {
-                closeMiniGuide()
-                return
-            }
-            appModel.sleepTimer.cancel()
-            dismiss()
-        }
         .onDisappear {
             appModel.player.tearDown()
         }
+        #if !os(tvOS)
+        .sheet(isPresented: miniGuideSheetBinding) {
+            miniGuideOverlayView
+                .environment(appModel)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        #endif
     }
+
+    private var miniGuideOverlayView: some View {
+        MiniGuideOverlay(
+            activeChannelID: appModel.player.activeChannel?.id ?? channel.id,
+            onTune: { selected in
+                appModel.tune(to: selected)
+                closeMiniGuide()
+            },
+            onClose: { closeMiniGuide() }
+        )
+    }
+
+    #if os(tvOS)
+    private func handleMove(_ direction: MoveCommandDirection) {
+        if appModel.sleepTimer.isWarning {
+            appModel.sleepTimer.dismissWarning()
+            showOverlay()
+            return
+        }
+        if miniGuideOpen {
+            if direction == .left {
+                closeMiniGuide()
+                return
+            }
+            resetMiniGuideAutoHide()
+            return
+        }
+        switch direction {
+        case .up:
+            appModel.tuneAdjacent(offset: -1)
+        case .down:
+            appModel.tuneAdjacent(offset: 1)
+        case .right:
+            openMiniGuide()
+            return
+        default:
+            break
+        }
+        showOverlay()
+    }
+
+    private func handleExit() {
+        if miniGuideOpen {
+            closeMiniGuide()
+            return
+        }
+        appModel.sleepTimer.cancel()
+        dismiss()
+    }
+    #else
+    private func handleSwipe(translation: CGSize) {
+        if appModel.sleepTimer.isWarning {
+            appModel.sleepTimer.dismissWarning()
+            showOverlay()
+            return
+        }
+        let dx = translation.width
+        let dy = translation.height
+        let absX = abs(dx)
+        let absY = abs(dy)
+
+        if miniGuideOpen {
+            if dx < -30 {
+                closeMiniGuide()
+            } else {
+                resetMiniGuideAutoHide()
+            }
+            return
+        }
+
+        if absX > absY {
+            if dx > 50 {
+                openMiniGuide()
+                return
+            } else if dx < -50 {
+                // Swipe-left with no mini-guide: no-op for now.
+                showOverlay()
+                return
+            }
+        } else {
+            if dy < -50 {
+                appModel.tuneAdjacent(offset: -1)
+            } else if dy > 120 {
+                // Strong swipe down dismisses Now Playing.
+                appModel.sleepTimer.cancel()
+                dismiss()
+                return
+            } else if dy > 50 {
+                appModel.tuneAdjacent(offset: 1)
+            }
+        }
+        showOverlay()
+    }
+    #endif
 
     private var currentChannel: Channel {
         appModel.player.activeChannel ?? channel
@@ -129,6 +228,9 @@ struct NowPlayingView: View {
     private var overlay: some View {
         VStack {
             HStack(alignment: .top) {
+                #if !os(tvOS)
+                doneButton
+                #endif
                 channelChip
                 Spacer()
                 favoriteButton
@@ -140,10 +242,33 @@ struct NowPlayingView: View {
                 sleepChip
             }
         }
-        .padding(60)
-        .padding(.trailing, miniGuideOpen ? 540 : 0)
+        .padding(metrics.contentHorizontalPadding)
+        .padding(.trailing, sidePanelInset)
         .animation(.easeInOut(duration: 0.25), value: miniGuideOpen)
     }
+
+    private var sidePanelInset: CGFloat {
+        guard miniGuideOpen, let panelWidth = metrics.miniGuideWidth else { return 0 }
+        return panelWidth
+    }
+
+    #if !os(tvOS)
+    private var doneButton: some View {
+        Button {
+            appModel.sleepTimer.cancel()
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(GuideTokens.text)
+                .padding(14)
+                .background(Color.black.opacity(0.55), in: .circle)
+                .overlay(Circle().stroke(GuideTokens.borderStrong, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+    }
+    #endif
 
     private var channelChip: some View {
         HStack(spacing: 12) {

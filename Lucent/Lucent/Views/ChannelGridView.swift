@@ -3,9 +3,15 @@ import TVCore
 
 struct ChannelGridView: View {
     @Environment(AppModel.self) private var appModel
+    @Environment(\.layoutMetrics) private var metrics
     @State private var presentedChannel: Channel?
 
-    private let columns = [GridItem(.adaptive(minimum: 320, maximum: 360), spacing: 32)]
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: 32),
+            count: metrics.channelGridColumns
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -28,7 +34,7 @@ struct ChannelGridView: View {
                             emptyState
                         }
                     }
-                    .padding(.horizontal, 80)
+                    .padding(.horizontal, metrics.contentHorizontalPadding)
                     .padding(.vertical, 60)
                 }
             }
@@ -62,11 +68,31 @@ struct ChannelGridView: View {
             Image(systemName: "antenna.radiowaves.left.and.right")
                 .font(.system(size: 80))
                 .foregroundStyle(GuideTokens.text3)
-            Text("No channels yet")
-                .font(.title3)
-                .foregroundStyle(GuideTokens.text)
-            Text("Open Settings and enter your HDHomeRun's IP address.")
-                .foregroundStyle(GuideTokens.text2)
+            if appModel.isScanning {
+                ProgressView()
+                Text("Looking for HDHomeRun on your network…")
+                    .foregroundStyle(GuideTokens.text2)
+            } else {
+                Text("No channels yet")
+                    .font(.title3)
+                    .foregroundStyle(GuideTokens.text)
+                if let err = appModel.bootstrapError {
+                    Text(err)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(GuideTokens.text3)
+                        .padding(.horizontal, 32)
+                } else {
+                    Text("Open Settings and enter your HDHomeRun's IP address.")
+                        .foregroundStyle(GuideTokens.text2)
+                }
+                Button {
+                    Task { await appModel.bootstrap() }
+                } label: {
+                    Text("Try again")
+                }
+                .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 80)
@@ -76,9 +102,17 @@ struct ChannelGridView: View {
 private struct ChannelCard: View {
     let channel: Channel
     let action: () -> Void
-    @Environment(\.isFocused) private var isFocused
     @Environment(AppModel.self) private var appModel
     @State private var nowPlaying: Program?
+
+    #if os(tvOS)
+    @Environment(\.isFocused) private var environmentFocused
+    private var isHighlighted: Bool { environmentFocused }
+    #else
+    @State private var isHovered: Bool = false
+    @State private var isPressed: Bool = false
+    private var isHighlighted: Bool { isHovered || isPressed }
+    #endif
 
     var body: some View {
         Button(action: action) {
@@ -121,20 +155,28 @@ private struct ChannelCard: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
-                        isFocused ? GuideTokens.focusRing : GuideTokens.border,
-                        lineWidth: isFocused ? 2 : 1
+                        isHighlighted ? GuideTokens.focusRing : GuideTokens.border,
+                        lineWidth: isHighlighted ? 2 : 1
                     )
             )
             .shadow(
-                color: isFocused ? .black.opacity(0.5) : .clear,
-                radius: isFocused ? 24 : 0,
+                color: isHighlighted ? .black.opacity(0.5) : .clear,
+                radius: isHighlighted ? 24 : 0,
                 x: 0,
-                y: isFocused ? 16 : 0
+                y: isHighlighted ? 16 : 0
             )
         }
         .buttonStyle(.plain)
-        .scaleEffect(isFocused ? 1.06 : 1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+        .scaleEffect(isHighlighted ? 1.06 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHighlighted)
+        #if !os(tvOS)
+        .onHover { isHovered = $0 }
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+        #endif
         .task(id: channel.id) {
             nowPlaying = try? await appModel.nowPlaying(for: channel)
         }

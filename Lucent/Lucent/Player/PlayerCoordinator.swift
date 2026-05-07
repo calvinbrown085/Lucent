@@ -1,6 +1,10 @@
 import Foundation
 import Observation
+#if canImport(TVVLCKit)
 import TVVLCKit
+#elseif canImport(MobileVLCKit)
+import MobileVLCKit
+#endif
 import TVCore
 
 /// Owns the active `VLCMediaPlayer` and a small pool of prewarmed players

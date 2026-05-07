@@ -59,9 +59,16 @@ final class AppModel {
         bootstrapError = nil
 
         // First-launch convenience: no IP saved → scan the LAN, and if exactly
-        // one HDHR responds, claim it automatically.
+        // one HDHR responds, claim it automatically. The first probe to a
+        // local IP also triggers the iOS Local Network permission prompt;
+        // users routinely take several seconds to tap Allow, so retry until
+        // a scan finds something or we exhaust the budget (~10 s).
         if settings.hdhrIP.isEmpty {
-            await scanForDevices()
+            for attempt in 0..<5 {
+                if attempt > 0 { try? await Task.sleep(for: .seconds(2)) }
+                await scanForDevices()
+                if !discoveredDevices.isEmpty { break }
+            }
             if discoveredDevices.count == 1 {
                 settings.hdhrIP = discoveredDevices[0].host
             }
@@ -148,12 +155,9 @@ final class AppModel {
         #endif
         switch settings.guideSource {
         case .gracenote:
-            if settings.postalCode.trimmingCharacters(in: .whitespaces).isEmpty {
-                await updatePostalCodeFromLocation()
-            }
             let zip = settings.postalCode.trimmingCharacters(in: .whitespaces)
             guard !zip.isEmpty else {
-                bootstrapError = "Set a postal code in Settings (or allow location) to load listings."
+                bootstrapError = "Set a postal code in Settings (or tap “Use my location”) to load listings."
                 return
             }
             let country = settings.countryCode.trimmingCharacters(in: .whitespaces).uppercased().isEmpty

@@ -75,6 +75,7 @@ struct NowPlayingView: View {
                     .zIndex(2)
             }
         }
+        .contentShape(Rectangle())
         .onAppear {
             scheduleHide()
         }
@@ -100,7 +101,7 @@ struct NowPlayingView: View {
             handleExit()
         }
         #else
-        .gesture(
+        .simultaneousGesture(
             DragGesture(minimumDistance: 30)
                 .onEnded { value in
                     handleSwipe(translation: value.translation)
@@ -110,8 +111,14 @@ struct NowPlayingView: View {
         .onTapGesture {
             if appModel.sleepTimer.isWarning {
                 appModel.sleepTimer.dismissWarning()
+                showOverlay()
+                return
             }
-            showOverlay()
+            if overlayVisible {
+                hideOverlay()
+            } else {
+                showOverlay()
+            }
         }
         .onDisappear {
             appModel.player.tearDown()
@@ -425,6 +432,11 @@ struct NowPlayingView: View {
     private func showOverlay() {
         withAnimation(.easeInOut(duration: 0.2)) { overlayVisible = true }
         scheduleHide()
+    }
+
+    private func hideOverlay() {
+        hideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.25)) { overlayVisible = false }
     }
 
     private func openMiniGuide() {

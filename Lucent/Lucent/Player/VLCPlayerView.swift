@@ -15,6 +15,7 @@ struct VLCPlayerView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
         let view = VLCDrawableView()
         view.backgroundColor = .black
+        view.isUserInteractionEnabled = false
         attach(player: appModel.player.activePlayer, to: view)
         return view
     }

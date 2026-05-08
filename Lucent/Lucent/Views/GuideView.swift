@@ -135,7 +135,7 @@ struct GuideView: View {
 
     @ViewBuilder
     private var gridBody: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             backgroundGradient.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: 0) {
@@ -162,6 +162,7 @@ struct GuideView: View {
                 gridSection
                     .padding(.leading, metrics.contentHorizontalPadding)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

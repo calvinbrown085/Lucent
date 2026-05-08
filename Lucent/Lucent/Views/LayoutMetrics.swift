@@ -24,6 +24,22 @@ struct LayoutMetrics: Sendable, Equatable {
     /// `guideTimeColumnWidth` (which is the px-per-30-min slot).
     var pxPerMinute: CGFloat { guideTimeColumnWidth / 30 }
 
+    /// Shrinks `guideTimeColumnWidth` so the channel rail, 8 time slots, and
+    /// horizontal padding all fit within `width`. Only narrows — never grows
+    /// past the configured default — so tvOS and any container at-or-above
+    /// the design width keep their original metrics.
+    func adapted(toContainerWidth width: CGFloat) -> LayoutMetrics {
+        let slotCount: CGFloat = 8 // mirrors GuideTokens.visibleSlots
+        let available = width - guideChannelRailWidth - contentHorizontalPadding
+        guard available > 0 else { return self }
+        let derived = floor(available / slotCount)
+        let resolved = min(derived, guideTimeColumnWidth)
+        let clamped = max(72, resolved)
+        var copy = self
+        copy.guideTimeColumnWidth = clamped
+        return copy
+    }
+
     static let tvOS = LayoutMetrics(
         channelGridColumns: 6,
         guideTimeColumnWidth: 200,

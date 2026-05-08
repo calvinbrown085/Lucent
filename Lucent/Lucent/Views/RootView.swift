@@ -8,19 +8,34 @@ struct RootView: View {
     #endif
 
     var body: some View {
+        #if os(tvOS)
+        tabs
+            .tint(GuideTokens.accent)
+            .environment(\.layoutMetrics, resolvedMetrics)
+        #else
+        GeometryReader { geo in
+            tabs
+                .tint(GuideTokens.accent)
+                .environment(
+                    \.layoutMetrics,
+                    resolvedMetrics.adapted(toContainerWidth: geo.size.width)
+                )
+        }
+        #endif
+    }
+
+    private var tabs: some View {
         TabView {
-            Tab("Channels", systemImage: "tv") {
-                ChannelGridView()
-            }
             Tab("Guide", systemImage: "calendar.day.timeline.left") {
                 GuideView()
+            }
+            Tab("Channels", systemImage: "tv") {
+                ChannelGridView()
             }
             Tab("Settings", systemImage: "gearshape") {
                 SettingsView()
             }
         }
-        .tint(GuideTokens.accent)
-        .environment(\.layoutMetrics, resolvedMetrics)
     }
 
     private var resolvedMetrics: LayoutMetrics {

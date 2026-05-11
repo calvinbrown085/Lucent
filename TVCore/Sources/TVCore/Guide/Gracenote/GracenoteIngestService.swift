@@ -5,29 +5,51 @@ public actor GracenoteIngestService {
     private let client: GracenoteAPIClient
     private(set) public var lastRefresh: Date?
 
+    /// Days of historical listings retained for the auto (Gracenote) guide. Drives
+    /// both the initial backfill window and the purge cutoff.
+    public static let historyDays: Int = 7
+
     public init(store: EPGStore, client: GracenoteAPIClient = GracenoteAPIClient()) {
         self.store = store
         self.client = client
     }
 
-    /// Fetch listings for `hours` from now in 6-hour chunks, ingest each chunk into
-    /// the EPG store, and prune programs that ended more than 6h ago. Mirrors the
-    /// contract of `EPGService.refresh(from:)` so callers can swap them.
-    public func refresh(lineup: GracenoteLineup, hours: Int = 24) async throws {
+    /// Fetch listings spanning `[now − historyDays·24h, now + hours]` in 6-hour
+    /// chunks, ingest each chunk into the EPG store, and prune programs that ended
+    /// more than `historyDays` ago. On the first refresh per lineup the backfill
+    /// runs once; subsequent refreshes only fetch the forward window, relying on
+    /// the rolling daily forward fetch to keep the 7-day history populated.
+    public func refresh(lineup: GracenoteLineup, hours: Int = 24, historyDays: Int = GracenoteIngestService.historyDays) async throws {
         let chunkSize = GracenoteAPIClient.chunkHours
-        let chunkCount = max(1, Int((Double(hours) / Double(chunkSize)).rounded(.up)))
         let anchor = Date()
         let timezoneOffset = TimeZone.current.secondsFromGMT()
+        let backfillKey = Self.backfillKey(for: lineup)
+        let backfillDone = UserDefaults.standard.object(forKey: backfillKey) != nil
+
+        // Hour offsets (relative to anchor) of each chunk we need to fetch.
+        // Backfill chunks come first so that if the network drops we still have
+        // the most-recent-past windows ingested before bailing.
+        var startOffsets: [Int] = []
+        if !backfillDone {
+            let backfillChunks = (historyDays * 24) / chunkSize
+            for i in 0..<backfillChunks {
+                startOffsets.append(-historyDays * 24 + i * chunkSize)
+            }
+        }
+        let forwardChunks = max(1, Int((Double(hours) / Double(chunkSize)).rounded(.up)))
+        for i in 0..<forwardChunks {
+            startOffsets.append(i * chunkSize)
+        }
 
         #if DEBUG
-        print("[Lucent][Gracenote] refresh start lineup=\(lineup.lineupID) postal=\(lineup.postalCode) hours=\(hours) chunks=\(chunkCount)")
+        print("[Lucent][Gracenote] refresh start lineup=\(lineup.lineupID) postal=\(lineup.postalCode) hours=\(hours) historyDays=\(historyDays) backfillDone=\(backfillDone) totalChunks=\(startOffsets.count)")
         #endif
         var totalChannels = 0
         var totalEvents = 0
 
-        for i in 0..<chunkCount {
+        for (i, offsetHours) in startOffsets.enumerated() {
             try Task.checkCancellation()
-            let start = anchor.addingTimeInterval(Double(i * chunkSize) * 3600)
+            let start = anchor.addingTimeInterval(Double(offsetHours) * 3600)
             let response = try await client.fetchChunk(
                 startingAt: start,
                 timespanHours: chunkSize,
@@ -40,18 +62,35 @@ public actor GracenoteIngestService {
             totalEvents += chunkEvents
             #if DEBUG
             let sampleIDs = response.channels.prefix(5).compactMap { Self.channelXmltvID(for: $0) }
-            print("[Lucent][Gracenote] chunk \(i + 1)/\(chunkCount) start=\(start) channels=\(chunkChannels) events=\(chunkEvents) sampleKeys=\(sampleIDs)")
+            print("[Lucent][Gracenote] chunk \(i + 1)/\(startOffsets.count) start=\(start) channels=\(chunkChannels) events=\(chunkEvents) sampleKeys=\(sampleIDs)")
             #endif
 
             let stream = Self.programStream(from: response)
             try await store.ingest(stream)
         }
 
+        if !backfillDone {
+            UserDefaults.standard.set(anchor, forKey: backfillKey)
+        }
+
         #if DEBUG
         print("[Lucent][Gracenote] refresh done channelsSeen=\(totalChannels) eventsSeen=\(totalEvents)")
         #endif
         lastRefresh = .now
-        try? await store.purgeOlderThan(.now.addingTimeInterval(-6 * 3600))
+        try? await store.purgeOlderThan(.now.addingTimeInterval(-Double(historyDays) * 24 * 3600))
+    }
+
+    /// UserDefaults key marking that the initial 7-day backfill has completed for
+    /// a given lineup. Switching postal code / lineup uses a different key, so
+    /// the new lineup gets its own backfill.
+    private static func backfillKey(for lineup: GracenoteLineup) -> String {
+        "com.calvinbrown.Lucent.gracenoteBackfillCompletedAt.\(lineup.lineupID)"
+    }
+
+    /// Test/diagnostic hook: clears the persisted backfill watermark for a lineup
+    /// so the next `refresh` re-runs the historical fetch.
+    public static func resetBackfill(for lineup: GracenoteLineup) {
+        UserDefaults.standard.removeObject(forKey: backfillKey(for: lineup))
     }
 
     /// Convert a Gracenote grid response into an `XMLTVEvent` stream so it can flow

@@ -88,12 +88,18 @@ final class PlayerCoordinator {
     private func makePlayer(for channel: Channel) -> VLCMediaPlayer {
         let media = VLCMedia(url: channel.streamURL)
         // Live stream tuning: short network buffer keeps latency tolerable.
-        media.addOptions([
+        var options: [String: NSNumber] = [
             "network-caching": NSNumber(value: 500),
             "live-caching": NSNumber(value: 500),
             "clock-jitter": NSNumber(value: 0),
             "clock-synchro": NSNumber(value: 0),
-        ])
+        ]
+        #if os(tvOS)
+        // VLC's tvOS decode/display pipeline lags its audio output by a fixed
+        // amount; positive value delays audio (ms) to realign with picture.
+        options["audio-desync"] = NSNumber(value: 120)
+        #endif
+        media.addOptions(options)
         let player = VLCMediaPlayer()
         player.media = media
         return player

@@ -17,6 +17,14 @@ struct VLCPlayerView: UIViewRepresentable {
         view.backgroundColor = .black
         view.isUserInteractionEnabled = false
         attach(player: appModel.player.activePlayer, to: view)
+        #if !os(tvOS)
+        // Defer until the next runloop so `view.superview` exists when PIP
+        // mounts the sample-buffer host as a sibling.
+        let model = appModel
+        DispatchQueue.main.async {
+            model.pip.bind(sourceView: view)
+        }
+        #endif
         return view
     }
 

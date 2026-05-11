@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `@Observable` (Observation framework), not `ObservableObject`
 
 ### v1 scope is locked tight
-tvOS-only, HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / PiP / Top Shelf. Don't propose adding these.
+HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / Top Shelf. Don't propose adding these. (PiP shipped on iOS / iPadOS via sample-buffer pump from VLC into `AVSampleBufferDisplayLayer`; tvOS has no AVPiP and stays without.)
 
 ### Liquid Glass usage rule
 Liquid Glass goes on the **navigation layer only** (tab bar, `NowPlayingView` overlay chips, Settings sheet buttons). **Never** on content (channel cards, EPG cells, video). Don't wrap `VLCPlayerView` in a `UIVisualEffectView` — VLC draws into a `CAEAGLLayer`/`CAMetalLayer` and you'll get black squares. Glass overlays must be sibling SwiftUI layers.

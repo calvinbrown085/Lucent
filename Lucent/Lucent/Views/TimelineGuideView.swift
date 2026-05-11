@@ -15,9 +15,15 @@ struct TimelineGuideView: View {
     @State private var programs: [Program] = []
     @State private var didLoad: Bool = false
     @State private var loadTask: Task<Void, Never>?
+    /// 0 = today (rolling [-1h, +6h] window), negative values go back N whole days.
+    /// Clamped to `historyDayRange` so users can't request data we don't keep.
+    @State private var dayOffset: Int = 0
 
     private static let lookbackHours: Double = 1
     private static let lookaheadHours: Double = 6
+    /// Number of past days the day-selector exposes. Matches the Gracenote
+    /// retention window so we never offer a day that's been purged.
+    private static let historyDays: Int = 7
 
     var body: some View {
         ZStack {
@@ -27,6 +33,11 @@ struct TimelineGuideView: View {
                 channelStrip
                     .padding(.top, 12)
                     .padding(.bottom, 8)
+
+                Divider().background(GuideTokens.border)
+
+                dayStrip
+                    .padding(.vertical, 8)
 
                 Divider().background(GuideTokens.border)
 
@@ -48,6 +59,10 @@ struct TimelineGuideView: View {
             loadTask?.cancel()
             loadTask = Task { await loadPrograms() }
         }
+        .onChange(of: dayOffset) { _, _ in
+            loadTask?.cancel()
+            loadTask = Task { await loadPrograms() }
+        }
     }
 
     private var backgroundGradient: some View {
@@ -57,6 +72,37 @@ struct TimelineGuideView: View {
             startRadius: 200,
             endRadius: 1400
         )
+    }
+
+    private var dayStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // Offsets ordered oldest → newest so "Today" sits on the right
+                    // edge — matches the natural "history is to the left" mental
+                    // model when the strip starts scrolled to the rightmost chip.
+                    ForEach(Array(-Self.historyDays...0), id: \.self) { offset in
+                        DayChip(
+                            label: Self.dayLabel(forOffset: offset),
+                            isSelected: offset == dayOffset
+                        ) {
+                            dayOffset = offset
+                        }
+                        .id(offset)
+                    }
+                }
+                .padding(.horizontal, metrics.contentHorizontalPadding)
+            }
+            .task {
+                // Land on "Today" at first appearance.
+                proxy.scrollTo(0, anchor: .trailing)
+            }
+            .onChange(of: dayOffset) { _, newOffset in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo(newOffset, anchor: .center)
+                }
+            }
+        }
     }
 
     private var channelStrip: some View {
@@ -220,8 +266,7 @@ struct TimelineGuideView: View {
             return
         }
         didLoad = false
-        let from = Date.now.addingTimeInterval(-Self.lookbackHours * 3600)
-        let to = Date.now.addingTimeInterval(Self.lookaheadHours * 3600)
+        let (from, to) = Self.window(forOffset: dayOffset)
         do {
             let result = try await appModel.programs(for: channel, from: from, to: to)
             programs = result
@@ -231,9 +276,66 @@ struct TimelineGuideView: View {
         didLoad = true
     }
 
+    /// Time window for a given day offset.
+    /// - `0` (Today): rolling [now − 1h, now + 6h] — same "what's on next" feel
+    ///   the view had before history was added.
+    /// - Negative: the full calendar day in the user's current time zone.
+    private static func window(forOffset offset: Int) -> (Date, Date) {
+        if offset == 0 {
+            let from = Date.now.addingTimeInterval(-lookbackHours * 3600)
+            let to = Date.now.addingTimeInterval(lookaheadHours * 3600)
+            return (from, to)
+        }
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: .now)
+        guard let dayStart = cal.date(byAdding: .day, value: offset, to: startOfToday),
+              let dayEnd = cal.date(byAdding: .day, value: 1, to: dayStart) else {
+            return (.now, .now)
+        }
+        return (dayStart, dayEnd)
+    }
+
+    private static func dayLabel(forOffset offset: Int) -> String {
+        switch offset {
+        case 0: return "Today"
+        case -1: return "Yesterday"
+        default:
+            let cal = Calendar.current
+            let date = cal.date(byAdding: .day, value: offset, to: cal.startOfDay(for: .now)) ?? .now
+            let f = DateFormatter()
+            f.dateFormat = "EEE d"
+            return f.string(from: date)
+        }
+    }
+
     private func isAiring(_ program: Program) -> Bool {
         let now = Date.now
         return program.start <= now && program.stop > now
+    }
+}
+
+private struct DayChip: View {
+    let label: String
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            Text(label)
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .foregroundStyle(isSelected ? Color.white : GuideTokens.text2)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? GuideTokens.accent : GuideTokens.surface)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? Color.clear : GuideTokens.border, lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }
 

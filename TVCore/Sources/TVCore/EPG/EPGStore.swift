@@ -16,9 +16,13 @@ public actor EPGStore {
         try Self.migrate(queue)
     }
 
-    /// Convenience: store at `Documents/epg.sqlite`.
+    /// Convenience: store at `Library/Caches/epg.sqlite`.
+    ///
+    /// Documents is read-only on real tvOS devices (Simulator allows writes,
+    /// masking this). The EPG is regenerable from Gracenote/XMLTV, so an
+    /// OS-initiated Caches purge is recoverable via `defaultStoreRecovering`.
     public static func defaultStore() throws -> EPGStore {
-        let dir = URL.documentsDirectory
+        let dir = URL.cachesDirectory
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let dbURL = dir.appending(path: "epg.sqlite")
         return try EPGStore(databaseURL: dbURL)
@@ -31,7 +35,7 @@ public actor EPGStore {
         do {
             return try defaultStore()
         } catch {
-            let dbURL = URL.documentsDirectory.appending(path: "epg.sqlite")
+            let dbURL = URL.cachesDirectory.appending(path: "epg.sqlite")
             try? FileManager.default.removeItem(at: dbURL)
             // SQLite WAL mode writes `epg.sqlite-wal` and `epg.sqlite-shm`
             // sidecars (hyphenated, not dotted). Remove them too so the retry

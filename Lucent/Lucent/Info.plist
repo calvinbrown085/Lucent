@@ -13,6 +13,10 @@
 	<string>Lucent communicates with your HDHomeRun tuner on your local network to discover channels and stream live TV.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Lucent uses your location to load TV listings for your area.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

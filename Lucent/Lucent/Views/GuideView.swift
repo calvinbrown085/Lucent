@@ -528,7 +528,11 @@ private struct GuideProgramCell: View {
         Button(action: onTap) {
             cellBody
         }
+        #if os(tvOS)
         .buttonStyle(.plain)
+        #else
+        .buttonStyle(PressTrackingButtonStyle { isPressed = $0 })
+        #endif
         .offset(x: offsetX, y: 0)
         .scaleEffect(isHighlighted ? 1.04 : 1.0, anchor: .leading)
         .zIndex(isHighlighted ? 3 : 1)
@@ -538,11 +542,6 @@ private struct GuideProgramCell: View {
         }
         #if !os(tvOS)
         .onHover { isHovered = $0 }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
         #endif
     }
 

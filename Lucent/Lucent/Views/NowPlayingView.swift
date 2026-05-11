@@ -77,6 +77,12 @@ struct NowPlayingView: View {
         }
         .contentShape(Rectangle())
         .onAppear {
+            #if !os(tvOS)
+            appModel.pip.nowPlayingMounted = true
+            // Prime the AVSampleBufferDisplayLayer continuously so AVPiP can
+            // auto-start from inline when the app backgrounds.
+            appModel.pip.startFeeding()
+            #endif
             scheduleHide()
         }
         .onChange(of: appModel.player.activeChannel?.id) { _, _ in
@@ -121,7 +127,17 @@ struct NowPlayingView: View {
             }
         }
         .onDisappear {
+            #if !os(tvOS)
+            appModel.pip.nowPlayingMounted = false
+            // Keep VLC alive if PIP is still showing — the frame source needs
+            // the player. PIP teardown will run player.tearDown() when it stops.
+            if !appModel.pip.isActive {
+                appModel.pip.stopFeeding()
+                appModel.player.tearDown()
+            }
+            #else
             appModel.player.tearDown()
+            #endif
         }
         #if !os(tvOS)
         .sheet(isPresented: miniGuideSheetBinding) {
@@ -240,6 +256,9 @@ struct NowPlayingView: View {
                 #endif
                 channelChip
                 Spacer()
+                #if !os(tvOS)
+                pipButton
+                #endif
                 favoriteButton
             }
             Spacer()
@@ -260,6 +279,25 @@ struct NowPlayingView: View {
     }
 
     #if !os(tvOS)
+    @ViewBuilder
+    private var pipButton: some View {
+        if appModel.pip.isSupported, appModel.pip.isPossible {
+            Button {
+                appModel.pip.toggle()
+                showOverlay()
+            } label: {
+                Image(systemName: appModel.pip.isActive ? "pip.exit" : "pip.enter")
+                    .font(.title)
+                    .foregroundStyle(GuideTokens.text)
+                    .padding(20)
+                    .background(Color.black.opacity(0.55), in: .circle)
+                    .overlay(Circle().stroke(GuideTokens.borderStrong, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(appModel.pip.isActive ? "Exit Picture in Picture" : "Picture in Picture")
+        }
+    }
+
     private var doneButton: some View {
         Button {
             appModel.sleepTimer.cancel()

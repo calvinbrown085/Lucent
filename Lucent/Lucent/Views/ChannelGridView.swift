@@ -166,16 +166,15 @@ private struct ChannelCard: View {
                 y: isHighlighted ? 16 : 0
             )
         }
+        #if os(tvOS)
         .buttonStyle(.plain)
+        #else
+        .buttonStyle(PressTrackingButtonStyle { isPressed = $0 })
+        #endif
         .scaleEffect(isHighlighted ? 1.06 : 1.0)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHighlighted)
         #if !os(tvOS)
         .onHover { isHovered = $0 }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in isPressed = true }
-                .onEnded { _ in isPressed = false }
-        )
         #endif
         .task(id: channel.id) {
             nowPlaying = try? await appModel.nowPlaying(for: channel)

@@ -9,6 +9,10 @@ final class AppModel {
     let player = PlayerCoordinator()
     let location = LocationService()
     let sleepTimer = SleepTimer()
+    let favoritesSync: FavoritesCloudSync
+    #if !os(tvOS)
+    let pip = PIPController()
+    #endif
 
     /// Set true when the sleep timer fires `onExpire` — NowPlayingView observes
     /// this to dismiss itself, then resets the flag.
@@ -38,6 +42,7 @@ final class AppModel {
         }
         self.epgService = EPGService(store: epgStore)
         self.gracenoteIngest = GracenoteIngestService(store: epgStore)
+        self.favoritesSync = FavoritesCloudSync(settings: settings)
         self.player.prewarmCount = settings.prewarmCount
         // AsyncImage uses URLSession.shared, which respects URLCache.shared. Give
         // it a real disk budget so channel logos don't refetch on every launch.
@@ -48,15 +53,24 @@ final class AppModel {
         )
         sleepTimer.onExpire = { [weak self] in
             guard let self else { return }
+            #if !os(tvOS)
+            self.pip.stop()
+            #endif
             self.player.tearDown()
             self.sleepTimerDidExpire = true
         }
+        #if !os(tvOS)
+        pip.onShouldTearDownPlayer = { [weak self] in
+            self?.player.tearDown()
+        }
+        #endif
     }
 
     /// Discover the configured HDHR, build the channel list with overrides applied,
     /// and kick off an XMLTV refresh in the background.
     func bootstrap() async {
         bootstrapError = nil
+        favoritesSync.start()
 
         // First-launch convenience: no IP saved → scan the LAN, and if exactly
         // one HDHR responds, claim it automatically. The first probe to a
@@ -329,6 +343,7 @@ final class AppModel {
 
     func toggleFavorite(_ channel: Channel) {
         settings.toggleFavorite(channel.id)
+        favoritesSync.push(settings.favorites)
     }
 
     func isFavorite(_ channel: Channel) -> Bool {

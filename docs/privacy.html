@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Lucent</title>
+<meta name="description" content="Lucent's privacy policy. Lucent does not collect, store, or share personal data.">
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="site">
+  <a href="index.html" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit">
+    <img src="logo.png" alt="Lucent logo">
+    <div>
+      <div class="title">Lucent</div>
+      <div class="tagline">Live TV for HDHomeRun</div>
+    </div>
+  </a>
+  <nav class="top">
+    <a href="support.html">Support</a>
+    <a href="privacy.html" class="current">Privacy</a>
+  </nav>
+</header>
+
+<h1>Privacy Policy</h1>
+<p class="muted small">Effective 11 May 2026</p>
+
+<p class="lead">Lucent does not collect, store, or share personal data. There are no accounts, no analytics, no advertising, and no third-party trackers.</p>
+
+<h2>What stays on your device</h2>
+<p>Everything Lucent stores stays on your device:</p>
+<ul>
+  <li>Your HDHomeRun device IP and channel lineup</li>
+  <li>Your guide source preference (Gracenote or XMLTV) and any postal code or XMLTV URL you enter</li>
+  <li>Your favorites, channel overrides, and other in-app settings</li>
+  <li>A local cache of programme listings (an SQLite database in the app's sandbox)</li>
+</ul>
+<p>None of this is uploaded anywhere by Lucent. Removing the app removes all of it.</p>
+
+<h2>Data sent to third parties</h2>
+<p>Lucent makes network requests only to services you choose to use:</p>
+<ul>
+  <li><strong>Your HDHomeRun tuner</strong> — Lucent communicates with your tuner directly on your local network to discover devices, list channels, and stream video. Nothing leaves your home network for this.</li>
+  <li><strong>Gracenote</strong> (only if you pick the Gracenote guide source) — Lucent sends your postal code, country code, and a time range to <code>tvlistings.gracenote.com</code> to fetch listings. No user identifier is attached. Gracenote's own privacy practices govern that request.</li>
+  <li><strong>Your XMLTV URL</strong> (only if you pick the XMLTV guide source) — Lucent makes a standard HTTPS request to the URL you enter, exactly as your browser would. Lucent does not see or store the contents of any URL you did not type.</li>
+</ul>
+
+<h2>Location</h2>
+<p>If you grant location permission, Lucent uses Apple's Core Location framework to derive your postal code so you don't have to type it. The postal code is stored on your device and is the only thing sent to Gracenote. Your precise coordinates are never stored or transmitted. You can decline or revoke location access at any time in Settings; Lucent will simply ask for the postal code instead.</p>
+
+<h2>Analytics, advertising, and tracking</h2>
+<p>None. Lucent contains no analytics SDK, no advertising SDK, no crash reporter, and no third-party tracker of any kind.</p>
+
+<h2>Children</h2>
+<p>Lucent is not directed at children under 13 and does not knowingly collect any information from them. Because Lucent collects no personal information at all, this would be the case for users of any age.</p>
+
+<h2>Changes to this policy</h2>
+<p>If Lucent's data practices ever change — for example, if a future version adds optional crash reporting — this page will be updated and the effective date above will change. Material changes will also be noted in the app's release notes.</p>
+
+<h2>Contact</h2>
+<p>Questions about this policy? Email <a href="mailto:cab025@protonmail.com">cab025@protonmail.com</a> or open an issue on <a href="https://github.com/calvinbrown085/Lucent/issues">GitHub</a>.</p>
+
+<footer class="site">
+  <div>&copy; 2026 Calvin Brown</div>
+  <div>
+    <a href="index.html">Home</a> &middot;
+    <a href="support.html">Support</a> &middot;
+    <a href="https://github.com/calvinbrown085/Lucent">GitHub</a>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

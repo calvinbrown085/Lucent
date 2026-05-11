@@ -184,7 +184,7 @@ final class AppModel {
             isRefreshingEPG = true
             defer { isRefreshingEPG = false }
             do {
-                try await gracenoteIngest.refresh(lineup: lineup, hours: 24)
+                try await gracenoteIngest.refresh(lineup: lineup, hours: 24 * 7)
                 self.lastEPGRefresh = await gracenoteIngest.lastRefresh
                 bootstrapError = nil
                 await applyChannelIcons()

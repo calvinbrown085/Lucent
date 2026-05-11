@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Support — Lucent</title>
+<meta name="description" content="Get help with Lucent. FAQ, bug reports, and contact.">
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="site">
+  <a href="index.html" style="display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit">
+    <img src="logo.png" alt="Lucent logo">
+    <div>
+      <div class="title">Lucent</div>
+      <div class="tagline">Live TV for HDHomeRun</div>
+    </div>
+  </a>
+  <nav class="top">
+    <a href="support.html" class="current">Support</a>
+    <a href="privacy.html">Privacy</a>
+  </nav>
+</header>
+
+<h1>Support</h1>
+<p class="lead">Found a bug, missing channels, or want a feature? Here's how to get help.</p>
+
+<div class="cards">
+  <a class="card" href="https://github.com/calvinbrown085/Lucent/issues/new">
+    <div class="label">Best option</div>
+    <div class="name">Open an issue on GitHub →</div>
+  </a>
+  <a class="card" href="mailto:cab025@protonmail.com">
+    <div class="label">Direct contact</div>
+    <div class="name">Email the developer →</div>
+  </a>
+</div>
+
+<p class="small muted">Before filing a bug, please include: your Apple TV / iPhone / iPad model, OS version, HDHomeRun model, and which guide source you're using (Gracenote or XMLTV).</p>
+
+<h2>FAQ</h2>
+
+<h3>Lucent can't find my HDHomeRun</h3>
+<p>Lucent discovers HDHomeRun tuners on your local network automatically. Make sure both the tuner and your Apple device are on the same Wi-Fi network (or LAN). If discovery still fails, you can enter the tuner's IP address manually in Settings. Some networks isolate wireless clients from each other ("AP isolation" or "client isolation") — turn that off on your router.</p>
+
+<h3>The guide is empty after I switched sources</h3>
+<p>Listings are joined to channels by an identifier that differs between guide sources. When you switch between Gracenote and XMLTV, Lucent rebuilds the mapping on the next guide refresh. If listings still don't appear, open Settings and check the per-channel XMLTV ID override — it should match what your guide source uses for that channel.</p>
+
+<h3>Streams stall or buffer constantly</h3>
+<p>Live HDHomeRun streams are sensitive to network jitter. Try moving the tuner to a wired connection if possible. If you're on Wi-Fi, prefer 5 GHz and stay within line-of-sight of your access point. If buffering persists, file an issue with your network setup and the channel that's stalling.</p>
+
+<h3>Channel up / down is slow</h3>
+<p>Lucent prewarms adjacent channels in the background, but it can only prewarm as many channels as you have free tuners. An HDHomeRun with 2 tuners can prewarm 1 channel at a time (one tuner is always reserved for the channel you're currently watching). Tuners with more channels prewarm more.</p>
+
+<h3>Gracenote shows the wrong listings</h3>
+<p>Gracenote keys listings by postal code and broadcast region. If your postal code spans two regions or sits near a boundary, you may see listings from the wrong side. Switch to an XMLTV source if accuracy matters.</p>
+
+<h3>Where's DVR? Series passes? Remote streaming?</h3>
+<p>Not in v1. Lucent v1 focuses on doing live TV well. Recording, remote access, and series management are on the roadmap but won't ship in v1.</p>
+
+<h3>Does Lucent work outside the US?</h3>
+<p>The XMLTV path works anywhere — point Lucent at any compliant XMLTV feed. Gracenote's postal-code lookup is US-only.</p>
+
+<h2>System requirements</h2>
+<ul>
+  <li>Apple TV with tvOS 26.2 or later, or iPhone/iPad on iOS 18+</li>
+  <li>HDHomeRun tuner on the same Wi-Fi/LAN</li>
+  <li>An antenna or compatible HDHomeRun input</li>
+  <li>US postal code for Gracenote, or any XMLTV feed for elsewhere</li>
+</ul>
+
+<footer class="site">
+  <div>&copy; 2026 Calvin Brown</div>
+  <div>
+    <a href="index.html">Home</a> &middot;
+    <a href="privacy.html">Privacy</a> &middot;
+    <a href="https://github.com/calvinbrown085/Lucent">GitHub</a>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

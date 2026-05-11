@@ -106,6 +106,10 @@ struct GuideView: View {
     // to that row's channel so the hero tile previews it.
     @State private var pendingTune: Task<Void, Never>?
 
+    // Captured at the start of a horizontal drag so each onChanged tick is
+    // applied as a delta from the gesture's origin viewport.
+    @State private var dragBaselineStart: Date?
+
     var body: some View {
         Group {
             if metrics.useTimelineGuide {
@@ -241,7 +245,7 @@ struct GuideView: View {
         let totalSlots = GuideTokens.visibleSlots
         let windowEnd = viewportStart.addingTimeInterval(Double(totalSlots) * 30 * 60)
 
-        return VStack(alignment: .leading, spacing: 12) {
+        let section = VStack(alignment: .leading, spacing: 12) {
             GuideTimeHeader(
                 viewportStart: viewportStart,
                 slotCount: totalSlots,
@@ -262,6 +266,39 @@ struct GuideView: View {
                 }
             }
         }
+        .animation(.easeOut(duration: 0.18), value: viewportStart)
+
+        #if os(tvOS)
+        return section
+            .onMoveCommand { direction in
+                switch direction {
+                case .left:
+                    viewportStart = viewportStart.addingTimeInterval(-30 * 60)
+                case .right:
+                    viewportStart = viewportStart.addingTimeInterval(30 * 60)
+                default:
+                    break
+                }
+            }
+        #else
+        return section
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        let baseline = dragBaselineStart ?? viewportStart
+                        if dragBaselineStart == nil { dragBaselineStart = baseline }
+                        // Drag left → translation.width negative → reveal later content.
+                        let minutes = -value.translation.width / metrics.pxPerMinute
+                        viewportStart = baseline.addingTimeInterval(minutes * 60)
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            viewportStart = Self.snapToHalfHour(viewportStart)
+                        }
+                        dragBaselineStart = nil
+                    }
+            )
+        #endif
     }
 
     @ViewBuilder
@@ -382,7 +419,7 @@ private struct GuideRowView: View {
                         .foregroundStyle(GuideTokens.text4)
                         .padding(.horizontal, 16)
                 }
-                ForEach(programs) { program in
+                ForEach(programs.filter { $0.stop > viewportStart && $0.start < windowEnd }) { program in
                     GuideProgramCell(
                         program: program,
                         channel: channel,
@@ -770,14 +807,6 @@ private struct GuideHeroCardView: View {
                 }
                 .buttonStyle(GuideHeroPrimaryButtonStyle())
                 .disabled(!isAiring(program))
-
-                Button { /* record stub */ } label: {
-                    Text("Record Series")
-                        .font(.system(size: 22, weight: .semibold))
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
-                }
-                .buttonStyle(GuideHeroSecondaryButtonStyle())
 
                 Button { onMoreInfo(program) } label: {
                     Text("More Info")

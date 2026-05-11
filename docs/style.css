@@ -1,0 +1,188 @@
+:root {
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --border: #262626;
+  --text: #ededed;
+  --muted: #9a9a9a;
+  --accent: #f58a3b;
+  --accent-soft: #ffb47a;
+  --link: #ffb47a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px 96px;
+}
+
+header.site {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 40px;
+}
+
+header.site img {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  display: block;
+}
+
+header.site .title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+header.site .tagline {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+nav.top {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  font-size: 14px;
+}
+
+nav.top a { color: var(--muted); }
+nav.top a:hover { color: var(--accent-soft); text-decoration: none; }
+nav.top a.current { color: var(--accent); }
+
+.hero {
+  padding: 16px 0 24px;
+}
+
+.hero img.bigLogo {
+  width: 128px;
+  height: 128px;
+  border-radius: 28px;
+  display: block;
+  margin: 8px 0 24px;
+}
+
+h1 {
+  font-size: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 14px;
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 40px 0 12px;
+  color: var(--accent-soft);
+}
+
+h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 24px 0 8px;
+}
+
+p { margin: 0 0 14px; }
+
+ul {
+  padding-left: 20px;
+  margin: 0 0 14px;
+}
+
+li { margin-bottom: 6px; }
+
+code {
+  font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 28px 0;
+}
+
+@media (max-width: 540px) {
+  .cards { grid-template-columns: 1fr; }
+  h1 { font-size: 30px; }
+}
+
+.card {
+  display: block;
+  padding: 18px 18px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.card .label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.card .name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.lead {
+  font-size: 18px;
+  color: var(--muted);
+  margin-bottom: 28px;
+}
+
+footer.site {
+  margin-top: 64px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+footer.site a { color: var(--muted); }
+footer.site a:hover { color: var(--accent-soft); }
+
+.muted { color: var(--muted); }
+.small { font-size: 14px; }

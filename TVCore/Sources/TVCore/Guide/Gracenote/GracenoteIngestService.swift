@@ -46,35 +46,53 @@ public actor GracenoteIngestService {
         #endif
         var totalChannels = 0
         var totalEvents = 0
+        var failedOffsets: [Int] = []
 
         for (i, offsetHours) in startOffsets.enumerated() {
             try Task.checkCancellation()
+            if i > 0 {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
             let start = anchor.addingTimeInterval(Double(offsetHours) * 3600)
-            let response = try await client.fetchChunk(
-                startingAt: start,
-                timespanHours: chunkSize,
-                timeZoneOffsetSeconds: timezoneOffset,
-                lineup: lineup
-            )
-            let chunkChannels = response.channels.count
-            let chunkEvents = response.channels.reduce(0) { $0 + ($1.events?.count ?? 0) }
-            totalChannels = max(totalChannels, chunkChannels)
-            totalEvents += chunkEvents
-            #if DEBUG
-            let sampleIDs = response.channels.prefix(5).compactMap { Self.channelXmltvID(for: $0) }
-            print("[Lucent][Gracenote] chunk \(i + 1)/\(startOffsets.count) start=\(start) channels=\(chunkChannels) events=\(chunkEvents) sampleKeys=\(sampleIDs)")
-            #endif
+            do {
+                let response = try await client.fetchChunk(
+                    startingAt: start,
+                    timespanHours: chunkSize,
+                    timeZoneOffsetSeconds: timezoneOffset,
+                    lineup: lineup
+                )
+                let chunkChannels = response.channels.count
+                let chunkEvents = response.channels.reduce(0) { $0 + ($1.events?.count ?? 0) }
+                totalChannels = max(totalChannels, chunkChannels)
+                totalEvents += chunkEvents
+                #if DEBUG
+                let sampleIDs = response.channels.prefix(5).compactMap { Self.channelXmltvID(for: $0) }
+                print("[Lucent][Gracenote] chunk \(i + 1)/\(startOffsets.count) offset=\(offsetHours)h start=\(start) channels=\(chunkChannels) events=\(chunkEvents) sampleKeys=\(sampleIDs)")
+                #endif
 
-            let stream = Self.programStream(from: response)
-            try await store.ingest(stream)
+                let stream = Self.programStream(from: response)
+                try await store.ingest(stream)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                failedOffsets.append(offsetHours)
+                #if DEBUG
+                print("[Lucent][Gracenote] chunk \(i + 1)/\(startOffsets.count) offset=\(offsetHours)h FAILED: \(error) — continuing")
+                #endif
+            }
         }
 
+        // Only set the one-time backfill watermark if every backfill chunk landed.
+        // Otherwise a transient 429 mid-backfill would freeze permanent holes.
         if !backfillDone {
-            UserDefaults.standard.set(anchor, forKey: backfillKey)
+            let backfillFailedAny = failedOffsets.contains { $0 < 0 }
+            if !backfillFailedAny {
+                UserDefaults.standard.set(anchor, forKey: backfillKey)
+            }
         }
 
         #if DEBUG
-        print("[Lucent][Gracenote] refresh done channelsSeen=\(totalChannels) eventsSeen=\(totalEvents)")
+        print("[Lucent][Gracenote] refresh done channelsSeen=\(totalChannels) eventsSeen=\(totalEvents) failedChunks=\(failedOffsets.count)/\(startOffsets.count)")
         #endif
         lastRefresh = .now
         try? await store.purgeOlderThan(.now.addingTimeInterval(-Double(historyDays) * 24 * 3600))

@@ -1,164 +1,232 @@
 #if !os(tvOS)
 import AVFoundation
 import CoreVideo
-import QuartzCore
-import UIKit
+import Foundation
+import MobileVLCKit
 
-/// Captures frames from a live `UIView` (the VLC drawable) and enqueues them
-/// onto an `AVSampleBufferDisplayLayer` so AVKit's PIP can display them.
+/// Adapts libVLC's memory output callbacks (installed via `LucentVLCSetVideoSink`)
+/// into an `AVSampleBufferDisplayLayer` enqueue stream. The same sink can fan
+/// out to multiple display layers — typically two: the in-app player view and
+/// the hidden host view that AVPiP migrates into its floating window.
 ///
-/// Why this exists: HDHR streams are MPEG-TS, decoded by VLC. AVPictureInPicture
-/// needs an AVPlayerLayer or a sample-buffer-fed display layer; we use the
-/// latter and pump VLC frames in via `UIView.drawHierarchy(in:afterScreenUpdates:)`,
-/// which is the only public API path that reliably captures GPU-rendered
-/// sublayer content (CAEAGLLayer / CAMetalLayer).
-@MainActor
-final class PIPFrameSource {
-    /// Last render size reported by AVPiP. Used to bias capture sizing in the
-    /// future if we want to track the PIP window's aspect ratio precisely.
-    var targetRenderSize: CMVideoDimensions = CMVideoDimensions(width: 640, height: 360)
+/// Why memory callbacks: when the app backgrounds, iOS suspends GPU rendering
+/// of foreground-only layers (Metal / EAGL), so VLC's normal view drawable
+/// would stop producing frames and any view-snapshot capture would yield
+/// black. Memory callbacks bypass VLC's GPU display path entirely — VLC
+/// decodes into a `CVPixelBuffer` we own, which we then enqueue into the
+/// display layer (a passive sink) on whatever thread VLC calls us on.
+///
+/// Threading: libVLC calls our methods from its video output thread. The
+/// AVSampleBufferDisplayLayer's renderer is thread-safe for `enqueue`, so we
+/// enqueue directly from VLC's thread. Mutable state is guarded by `lock`.
+final class PIPFrameSource: NSObject, LucentVLCVideoSink, @unchecked Sendable {
+    private let lock = NSLock()
 
-    private weak var sourceView: UIView?
-    private weak var displayLayer: AVSampleBufferDisplayLayer?
-
-    private var displayLink: CADisplayLink?
+    // All access guarded by `lock`.
+    private var displayTargets: [WeakDisplayLayer] = []
     private var pixelBufferPool: CVPixelBufferPool?
-    private var poolDimensions: (width: Int, height: Int) = (0, 0)
+    private var formatDescription: CMVideoFormatDescription?
+    private var width: Int = 0
+    private var height: Int = 0
+    private var pitch: Int = 0
+    private var attachedPlayer: VLCMediaPlayer?
 
-    func start(target: UIView?, into layer: AVSampleBufferDisplayLayer) {
-        stop()
-        self.sourceView = target
-        self.displayLayer = layer
-
-        let proxy = PIPDisplayLinkProxy(owner: self)
-        let link = CADisplayLink(target: proxy, selector: #selector(PIPDisplayLinkProxy.tick))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 24, maximum: 30, preferred: 30)
-        link.add(to: .main, forMode: .common)
-        self.displayLink = link
+    override init() {
+        super.init()
     }
 
-    func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
-        displayLayer?.sampleBufferRenderer.flush(removingDisplayedImage: true) { }
-        displayLayer = nil
-        sourceView = nil
-        pixelBufferPool = nil
-        poolDimensions = (0, 0)
-    }
+    // MARK: - Wiring
 
-    fileprivate func tick() {
-        guard let sourceView, let displayLayer else { return }
-        let bounds = sourceView.bounds
-        guard bounds.width > 0, bounds.height > 0 else { return }
+    /// Install this sink on `player` (replacing any previous installation).
+    /// MUST be called before `player.play()`. Pass `nil` to detach from the
+    /// current player.
+    func attach(to player: VLCMediaPlayer?) {
+        lock.lock()
+        let prior = attachedPlayer
+        attachedPlayer = player
+        lock.unlock()
 
-        // Cap capture at 640x360 to keep snapshot cost predictable on iPhone.
-        let scale = min(640 / bounds.width, 360 / bounds.height, 1)
-        let width = max(2, Int(floor(bounds.width * scale)))
-        let height = max(2, Int(floor(bounds.height * scale)))
-
-        ensurePool(width: width, height: height)
-        guard let pool = pixelBufferPool,
-              let pixelBuffer = makePixelBuffer(from: pool) else { return }
-
-        let captureSize = CGSize(width: width, height: height)
-        guard render(view: sourceView, into: pixelBuffer, size: captureSize) else { return }
-        guard let sampleBuffer = makeSampleBuffer(from: pixelBuffer) else { return }
-
-        if displayLayer.sampleBufferRenderer.status == .failed {
-            displayLayer.sampleBufferRenderer.flush()
+        if let prior, prior !== player {
+            LucentVLCSetVideoSink(prior, nil)
         }
-        displayLayer.sampleBufferRenderer.enqueue(sampleBuffer)
+        if let player {
+            LucentVLCSetVideoSink(player, self)
+        }
     }
 
-    private func ensurePool(width: Int, height: Int) {
-        if pixelBufferPool != nil, poolDimensions == (width, height) { return }
+    /// Register a display layer that should receive enqueued frames. Held
+    /// weakly — caller owns the layer's lifetime.
+    func addDisplayTarget(_ layer: AVSampleBufferDisplayLayer) {
+        lock.lock()
+        defer { lock.unlock() }
+        displayTargets.removeAll { $0.layer == nil || $0.layer === layer }
+        displayTargets.append(WeakDisplayLayer(layer: layer))
+    }
+
+    func removeDisplayTarget(_ layer: AVSampleBufferDisplayLayer) {
+        lock.lock()
+        defer { lock.unlock() }
+        displayTargets.removeAll { $0.layer == nil || $0.layer === layer }
+    }
+
+    // MARK: - LucentVLCVideoSink
+
+    /// Negotiate the decoded format. Called on VLC's setup thread when the
+    /// stream starts and again any time the format changes (e.g. resolution
+    /// change). We accept whatever width/height VLC reports and ask for BGRA.
+    func videoSinkConfigureChroma(
+        _ chroma: UnsafeMutablePointer<CChar>,
+        width widthPtr: UnsafeMutablePointer<UInt32>,
+        height heightPtr: UnsafeMutablePointer<UInt32>,
+        outPitchBytes: UnsafeMutablePointer<UInt32>
+    ) -> Bool {
+        // Force BGRA — matches kCVPixelFormatType_32BGRA so we can wrap a
+        // CVPixelBuffer with no conversion on the display side.
+        chroma[0] = CChar(UInt8(ascii: "B"))
+        chroma[1] = CChar(UInt8(ascii: "G"))
+        chroma[2] = CChar(UInt8(ascii: "R"))
+        chroma[3] = CChar(UInt8(ascii: "A"))
+
+        let w = Int(widthPtr.pointee)
+        let h = Int(heightPtr.pointee)
+        guard w > 0, h > 0 else { return false }
+
+        // Pitch in bytes per row — 4 bytes/pixel for BGRA, aligned to 32.
+        let rowBytes = w * 4
+        let alignedPitch = (rowBytes + 31) & ~31
+        outPitchBytes.pointee = UInt32(alignedPitch)
+
+        lock.lock()
+        defer { lock.unlock() }
+        width = w
+        height = h
+        pitch = alignedPitch
+        rebuildPoolLocked()
+        return true
+    }
+
+    /// Hand libVLC a writeable BGRA buffer. Returns the CVPixelBuffer pointer
+    /// as the opaque "picture" tag, retained until `display` (or `unlock` if
+    /// display is skipped — which libVLC docs say never happens, but we'd
+    /// rather not leak on edge cases).
+    func videoSinkLockPlanes(_ planeBaseOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>) -> UnsafeMutableRawPointer? {
+        lock.lock()
+        let pool = pixelBufferPool
+        lock.unlock()
+
+        guard let pool else { return nil }
+
+        var pixelBuffer: CVPixelBuffer?
+        let createStatus = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+        guard createStatus == kCVReturnSuccess, let pb = pixelBuffer else { return nil }
+
+        let lockStatus = CVPixelBufferLockBaseAddress(pb, [])
+        guard lockStatus == kCVReturnSuccess else { return nil }
+
+        planeBaseOut[0] = CVPixelBufferGetBaseAddress(pb)
+        // Retain so the CMSampleBuffer in display() finds a live object.
+        let retained = Unmanaged.passRetained(pb).toOpaque()
+        return retained
+    }
+
+    func videoSinkUnlockPicture(
+        _ picture: UnsafeMutableRawPointer,
+        planes: UnsafePointer<UnsafeMutableRawPointer>?
+    ) {
+        let pb = Unmanaged<CVPixelBuffer>.fromOpaque(picture).takeUnretainedValue()
+        CVPixelBufferUnlockBaseAddress(pb, [])
+    }
+
+    func videoSinkDisplayPicture(_ picture: UnsafeMutableRawPointer) {
+        // Take ownership — balances the +1 retain in lock.
+        let unmanagedPB = Unmanaged<CVPixelBuffer>.fromOpaque(picture)
+        let pb = unmanagedPB.takeRetainedValue()
+
+        lock.lock()
+        let fmt = formatDescription
+        let targets = displayTargets.compactMap(\.layer)
+        lock.unlock()
+
+        guard let fmt, !targets.isEmpty else { return }
+        guard let sb = makeSampleBuffer(from: pb, formatDescription: fmt) else { return }
+
+        for layer in targets {
+            if layer.sampleBufferRenderer.status == .failed {
+                layer.sampleBufferRenderer.flush()
+            }
+            layer.sampleBufferRenderer.enqueue(sb)
+        }
+    }
+
+    func videoSinkCleanup() {
+        lock.lock()
+        pixelBufferPool = nil
+        formatDescription = nil
+        width = 0; height = 0; pitch = 0
+        lock.unlock()
+    }
+
+    // MARK: - Pool
+
+    /// Caller must hold `lock`.
+    private func rebuildPoolLocked() {
+        formatDescription = nil
+        var newFmt: CMVideoFormatDescription?
+        // CMVideoCodecType is a FourCharCode; for pixel-buffer-backed video
+        // it's the pixel format type itself (BGRA → kCVPixelFormatType_32BGRA).
+        let fmtStatus = CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            codecType: CMVideoCodecType(kCVPixelFormatType_32BGRA),
+            width: Int32(width),
+            height: Int32(height),
+            extensions: nil,
+            formatDescriptionOut: &newFmt
+        )
+        if fmtStatus == noErr {
+            formatDescription = newFmt
+        }
+
         let pixelBufferAttrs: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey: width,
             kCVPixelBufferHeightKey: height,
+            kCVPixelBufferBytesPerRowAlignmentKey: pitch,
             kCVPixelBufferIOSurfacePropertiesKey: [:],
             kCVPixelBufferMetalCompatibilityKey: true,
             kCVPixelBufferCGBitmapContextCompatibilityKey: true,
         ]
+        // Keep a few buffers warm so lock() never has to block on allocation
+        // while VLC's decoder is waiting.
         let poolAttrs: [CFString: Any] = [
             kCVPixelBufferPoolMinimumBufferCountKey: 4
         ]
         var pool: CVPixelBufferPool?
         CVPixelBufferPoolCreate(nil, poolAttrs as CFDictionary, pixelBufferAttrs as CFDictionary, &pool)
-        self.pixelBufferPool = pool
-        self.poolDimensions = (width, height)
+        pixelBufferPool = pool
     }
 
-    private func makePixelBuffer(from pool: CVPixelBufferPool) -> CVPixelBuffer? {
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
-        guard status == kCVReturnSuccess else { return nil }
-        return pixelBuffer
-    }
-
-    private func render(view: UIView, into pixelBuffer: CVPixelBuffer, size: CGSize) -> Bool {
-        CVPixelBufferLockBaseAddress(pixelBuffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        guard let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) else { return false }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo: UInt32 =
-            CGBitmapInfo.byteOrder32Little.rawValue |
-            CGImageAlphaInfo.premultipliedFirst.rawValue
-        guard let ctx = CGContext(
-            data: baseAddress,
-            width: Int(size.width),
-            height: Int(size.height),
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else { return false }
-
-        // CGBitmapContext has a bottom-up Y axis but UIKit drawing assumes
-        // top-down. UIGraphicsPushContext doesn't apply the flip that
-        // UIGraphicsImageRenderer does internally, so apply it manually —
-        // otherwise drawHierarchy produces a vertically mirrored frame.
-        ctx.translateBy(x: 0, y: size.height)
-        ctx.scaleBy(x: 1, y: -1)
-
-        // drawHierarchy expects the current UIGraphics context to render into.
-        // afterScreenUpdates: false uses the most recent on-screen content,
-        // which is what VLC has just composited. Passing true forces a sync
-        // redraw and tanks FPS.
-        UIGraphicsPushContext(ctx)
-        defer { UIGraphicsPopContext() }
-        return view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: false)
-    }
-
-    private func makeSampleBuffer(from pixelBuffer: CVPixelBuffer) -> CMSampleBuffer? {
-        var formatDesc: CMVideoFormatDescription?
-        let formatStatus = CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDesc
-        )
-        guard formatStatus == noErr, let fmt = formatDesc else { return nil }
-
+    private func makeSampleBuffer(
+        from pixelBuffer: CVPixelBuffer,
+        formatDescription: CMVideoFormatDescription
+    ) -> CMSampleBuffer? {
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 30),
+            duration: .invalid,
             presentationTimeStamp: now,
             decodeTimeStamp: .invalid
         )
         var sampleBuffer: CMSampleBuffer?
-        let bufferStatus = CMSampleBufferCreateReadyWithImageBuffer(
+        let status = CMSampleBufferCreateReadyWithImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
-            formatDescription: fmt,
+            formatDescription: formatDescription,
             sampleTiming: &timing,
             sampleBufferOut: &sampleBuffer
         )
-        guard bufferStatus == noErr, let sb = sampleBuffer else { return nil }
+        guard status == noErr, let sb = sampleBuffer else { return nil }
 
-        // Live source: tell the display layer not to queue this buffer behind
-        // a back-pressure window — show it now.
+        // Tell AVSampleBufferDisplayLayer to skip its normal back-pressure
+        // queueing — we're a live source with no presentation timeline.
         if let attachments = CMSampleBufferGetSampleAttachmentsArray(sb, createIfNecessary: true) as? [CFMutableDictionary],
            let attach = attachments.first {
             CFDictionarySetValue(
@@ -171,12 +239,7 @@ final class PIPFrameSource {
     }
 }
 
-/// CADisplayLink retains its target. Use a tiny NSObject proxy with a weak
-/// owner reference so the source can be deinit'd cleanly.
-@MainActor
-private final class PIPDisplayLinkProxy: NSObject {
-    weak var owner: PIPFrameSource?
-    init(owner: PIPFrameSource) { self.owner = owner }
-    @objc func tick() { owner?.tick() }
+private struct WeakDisplayLayer {
+    weak var layer: AVSampleBufferDisplayLayer?
 }
 #endif

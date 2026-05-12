@@ -63,6 +63,13 @@ final class AppModel {
         pip.onShouldTearDownPlayer = { [weak self] in
             self?.player.tearDown()
         }
+        // Wire the active-player swap through PIPController so the
+        // PIPFrameSource installs libVLC video memory callbacks on whichever
+        // player is about to play. Must fire *before* the player's first
+        // play() — see PlayerCoordinator.onActivePlayerWillChange docs.
+        player.onActivePlayerWillChange = { [weak self] newPlayer in
+            self?.pip.attachVLCSource(newPlayer)
+        }
         #endif
     }
 

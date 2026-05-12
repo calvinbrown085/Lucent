@@ -79,9 +79,8 @@ struct NowPlayingView: View {
         .onAppear {
             #if !os(tvOS)
             appModel.pip.nowPlayingMounted = true
-            // Prime the AVSampleBufferDisplayLayer continuously so AVPiP can
-            // auto-start from inline when the app backgrounds.
-            appModel.pip.startFeeding()
+            // Frames are pumped continuously by PIPFrameSource as long as a
+            // VLC player is attached — no explicit "start feeding" needed.
             #endif
             scheduleHide()
         }
@@ -129,10 +128,10 @@ struct NowPlayingView: View {
         .onDisappear {
             #if !os(tvOS)
             appModel.pip.nowPlayingMounted = false
-            // Keep VLC alive if PIP is still showing — the frame source needs
-            // the player. PIP teardown will run player.tearDown() when it stops.
+            // Keep VLC alive if PIP is still showing — the layer migrated to
+            // the system PIP window and still needs frames. PIP teardown will
+            // run player.tearDown() when it stops.
             if !appModel.pip.isActive {
-                appModel.pip.stopFeeding()
                 appModel.player.tearDown()
             }
             #else

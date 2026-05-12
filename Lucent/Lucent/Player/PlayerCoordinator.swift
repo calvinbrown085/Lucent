@@ -25,6 +25,12 @@ final class PlayerCoordinator {
 
     private var prewarmed: [Channel.ID: VLCMediaPlayer] = [:]
 
+    /// Fires inside `tune(to:)` *before* `player.play()`, giving observers a
+    /// chance to install per-player resources (e.g. PIPFrameSource video
+    /// callbacks, which libVLC requires be set before play begins).
+    /// `nil` means there is no active player — call after teardown.
+    var onActivePlayerWillChange: ((VLCMediaPlayer?) -> Void)?
+
     init() {}
 
     /// Switch active playback to `channel`. Reuses a prewarmed player if one exists.
@@ -41,6 +47,8 @@ final class PlayerCoordinator {
         } else {
             player = makePlayer(for: channel)
         }
+
+        onActivePlayerWillChange?(player)
 
         player.audio?.isMuted = false
         player.play()
@@ -74,6 +82,7 @@ final class PlayerCoordinator {
     }
 
     func tearDown() {
+        onActivePlayerWillChange?(nil)
         activePlayer?.stop()
         activePlayer?.media = nil
         activePlayer = nil

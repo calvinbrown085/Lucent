@@ -139,6 +139,7 @@ private struct ChannelCard: View {
                                 .foregroundStyle(GuideTokens.accent2)
                         }
                     }
+                    .fixedSize(horizontal: true, vertical: false)
                 }
                 Text(channel.guideName)
                     .font(.headline)

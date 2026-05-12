@@ -121,6 +121,8 @@ private struct ChannelCard: View {
                     Text(channel.guideNumber)
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .foregroundStyle(GuideTokens.text)
                     Spacer()
                     HStack(alignment: .center, spacing: 8) {
@@ -140,6 +142,7 @@ private struct ChannelCard: View {
                         }
                     }
                     .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
                 }
                 Text(channel.guideName)
                     .font(.headline)

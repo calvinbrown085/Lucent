@@ -348,7 +348,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.005;
+				MARKETING_VERSION = 1.006;
 				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.Lucent;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -389,7 +389,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.005;
+				MARKETING_VERSION = 1.006;
 				PRODUCT_BUNDLE_IDENTIFIER = CalvinBrown.Lucent;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

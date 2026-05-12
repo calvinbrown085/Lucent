@@ -41,7 +41,7 @@ struct LayoutMetrics: Sendable, Equatable {
     }
 
     static let tvOS = LayoutMetrics(
-        channelGridColumns: 6,
+        channelGridColumns: 5,
         guideTimeColumnWidth: 200,
         guideRowHeight: 88,
         guideChannelRailWidth: 240,

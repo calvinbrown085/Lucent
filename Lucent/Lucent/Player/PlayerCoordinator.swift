@@ -25,20 +25,22 @@ final class PlayerCoordinator {
 
     private var prewarmed: [Channel.ID: VLCMediaPlayer] = [:]
 
-    /// Fires inside `tune(to:)` *before* `player.play()`, giving observers a
-    /// chance to install per-player resources (e.g. PIPFrameSource video
-    /// callbacks, which libVLC requires be set before play begins).
-    /// `nil` means there is no active player — call after teardown.
-    var onActivePlayerWillChange: ((VLCMediaPlayer?) -> Void)?
+    /// Current audio delay (microseconds, signed) to apply to every player.
+    /// Driven by `AudioLatencyMonitor` via `applyAudioDelayToAllPlayers(_:)`.
+    private var currentAudioDelayMicros: Int = 0
 
     init() {}
 
     /// Switch active playback to `channel`. Reuses a prewarmed player if one exists.
     func tune(to channel: Channel) {
+        // Fully stop (not pause) the prior player so HDHR releases its tuner.
+        // Pause keeps the HTTP socket open and the tuner reserved; on a 2-tuner
+        // device, two sequential channel switches would otherwise exhaust the
+        // tuner budget before the new stream can acquire one, producing the
+        // mpeg2video "Invalid frame dimensions 0x0" spam with no picture.
         if let prior = activeChannel, let priorPlayer = activePlayer, prior.id != channel.id {
-            priorPlayer.pause()
-            priorPlayer.audio?.isMuted = true
-            prewarmed[prior.id] = priorPlayer
+            priorPlayer.stop()
+            priorPlayer.media = nil
         }
 
         let player: VLCMediaPlayer
@@ -48,12 +50,11 @@ final class PlayerCoordinator {
             player = makePlayer(for: channel)
         }
 
-        onActivePlayerWillChange?(player)
-
         player.audio?.isMuted = false
         player.play()
         activePlayer = player
         activeChannel = channel
+        applyAudioDelay(to: player)
     }
 
     /// Refresh the prewarmed pool for a list of neighbor channels (typically the
@@ -78,11 +79,25 @@ final class PlayerCoordinator {
             // fetch + parse; `.play()` would also start decode and need a
             // drawable. We let the swap-in moment trigger play().
             prewarmed[channel.id] = player
+            applyAudioDelay(to: player)
         }
     }
 
+    /// Push a new audio delay (microseconds, signed) onto every player we own.
+    /// Called by `AudioLatencyMonitor` whenever the active output route's
+    /// latency changes. VLCKit accepts the value before the audio decoder is
+    /// running, so this is safe on freshly-prewarmed players.
+    func applyAudioDelayToAllPlayers(_ micros: Int) {
+        currentAudioDelayMicros = micros
+        if let active = activePlayer { applyAudioDelay(to: active) }
+        for (_, p) in prewarmed { applyAudioDelay(to: p) }
+    }
+
+    private func applyAudioDelay(to player: VLCMediaPlayer) {
+        player.currentAudioPlaybackDelay = currentAudioDelayMicros
+    }
+
     func tearDown() {
-        onActivePlayerWillChange?(nil)
         activePlayer?.stop()
         activePlayer?.media = nil
         activePlayer = nil
@@ -96,18 +111,19 @@ final class PlayerCoordinator {
 
     private func makePlayer(for channel: Channel) -> VLCMediaPlayer {
         let media = VLCMedia(url: channel.streamURL)
-        // Live stream tuning: short network buffer keeps latency tolerable.
-        var options: [String: NSNumber] = [
-            "network-caching": NSNumber(value: 500),
-            "live-caching": NSNumber(value: 500),
+        // Live stream tuning. 1500ms was not enough on iOS over WiFi — sparse
+        // MPEG-2 GOPs from HDHR plus packet jitter still produced "Invalid
+        // frame dimensions 0x0" spam with no video. 3000ms gives the decoder
+        // a full GOP of headroom before it tries to render.
+        // VLC's decode/display pipeline lags its audio output by a fixed
+        // amount; positive value delays audio (ms) to realign with picture.
+        let options: [String: NSNumber] = [
+            "network-caching": NSNumber(value: 3000),
+            "live-caching": NSNumber(value: 3000),
             "clock-jitter": NSNumber(value: 0),
             "clock-synchro": NSNumber(value: 0),
+            "audio-desync": NSNumber(value: 0),
         ]
-        #if os(tvOS)
-        // VLC's tvOS decode/display pipeline lags its audio output by a fixed
-        // amount; positive value delays audio (ms) to realign with picture.
-        options["audio-desync"] = NSNumber(value: 120)
-        #endif
         media.addOptions(options)
         let player = VLCMediaPlayer()
         player.media = media

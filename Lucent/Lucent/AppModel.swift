@@ -10,9 +10,7 @@ final class AppModel {
     let location = LocationService()
     let sleepTimer = SleepTimer()
     let favoritesSync: FavoritesCloudSync
-    #if !os(tvOS)
-    let pip = PIPController()
-    #endif
+    let audioMonitor = AudioLatencyMonitor()
 
     /// Set true when the sleep timer fires `onExpire` — NowPlayingView observes
     /// this to dismiss itself, then resets the flag.
@@ -53,24 +51,19 @@ final class AppModel {
         )
         sleepTimer.onExpire = { [weak self] in
             guard let self else { return }
-            #if !os(tvOS)
-            self.pip.stop()
-            #endif
             self.player.tearDown()
             self.sleepTimerDidExpire = true
         }
-        #if !os(tvOS)
-        pip.onShouldTearDownPlayer = { [weak self] in
-            self?.player.tearDown()
+        // Seed video-pipeline latency estimate. Correcting by full
+        // `-outputLatency` overshoots (audio ends up ahead of video) because
+        // VLC's own decode/drawable pipeline isn't zero-latency — it partially
+        // cancels the audio output latency. 100 ms is a starting guess; tune
+        // up to delay audio more, down to advance audio more.
+        audioMonitor.videoPipelineLatencyMicros = 50_000
+        audioMonitor.onChange = { [weak self] micros in
+            self?.player.applyAudioDelayToAllPlayers(micros)
         }
-        // Wire the active-player swap through PIPController so the
-        // PIPFrameSource installs libVLC video memory callbacks on whichever
-        // player is about to play. Must fire *before* the player's first
-        // play() — see PlayerCoordinator.onActivePlayerWillChange docs.
-        player.onActivePlayerWillChange = { [weak self] newPlayer in
-            self?.pip.attachVLCSource(newPlayer)
-        }
-        #endif
+        audioMonitor.start()
     }
 
     /// Discover the configured HDHR, build the channel list with overrides applied,

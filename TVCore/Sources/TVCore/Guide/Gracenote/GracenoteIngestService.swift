@@ -5,21 +5,32 @@ public actor GracenoteIngestService {
     private let client: GracenoteAPIClient
     private(set) public var lastRefresh: Date?
 
-    /// Days of historical listings retained for the auto (Gracenote) guide. Drives
-    /// both the initial backfill window and the purge cutoff.
+    /// Days of historical listings retained in the EPG cache. Drives the purge
+    /// cutoff only — Gracenote's grid endpoint won't serve listings more than a
+    /// few hours old, so backfill is limited to `lookbackHours`.
     public static let historyDays: Int = 7
+
+    /// How far back from `now` to fetch on the initial refresh. Gracenote rejects
+    /// (or returns empty for) negative offsets beyond roughly the current grid
+    /// window, so this is intentionally small — one 6-hour chunk by default,
+    /// enough to capture programs that started in the last few hours.
+    public static let lookbackHours: Int = GracenoteAPIClient.chunkHours
 
     public init(store: EPGStore, client: GracenoteAPIClient = GracenoteAPIClient()) {
         self.store = store
         self.client = client
     }
 
-    /// Fetch listings spanning `[now − historyDays·24h, now + hours]` in 6-hour
+    /// Fetch listings spanning `[now − lookbackHours, now + hours]` in 6-hour
     /// chunks, ingest each chunk into the EPG store, and prune programs that ended
-    /// more than `historyDays` ago. On the first refresh per lineup the backfill
-    /// runs once; subsequent refreshes only fetch the forward window, relying on
-    /// the rolling daily forward fetch to keep the 7-day history populated.
-    public func refresh(lineup: GracenoteLineup, hours: Int = 24, historyDays: Int = GracenoteIngestService.historyDays) async throws {
+    /// more than `historyDays` ago. On the first refresh per lineup the lookback
+    /// runs once; subsequent refreshes only fetch the forward window.
+    public func refresh(
+        lineup: GracenoteLineup,
+        hours: Int = 24,
+        lookbackHours: Int = GracenoteIngestService.lookbackHours,
+        historyDays: Int = GracenoteIngestService.historyDays
+    ) async throws {
         let chunkSize = GracenoteAPIClient.chunkHours
         let anchor = Date()
         let timezoneOffset = TimeZone.current.secondsFromGMT()
@@ -27,13 +38,13 @@ public actor GracenoteIngestService {
         let backfillDone = UserDefaults.standard.object(forKey: backfillKey) != nil
 
         // Hour offsets (relative to anchor) of each chunk we need to fetch.
-        // Backfill chunks come first so that if the network drops we still have
-        // the most-recent-past windows ingested before bailing.
+        // Lookback chunks come first so that if the network drops we still have
+        // the most-recent-past window ingested before bailing.
         var startOffsets: [Int] = []
         if !backfillDone {
-            let backfillChunks = (historyDays * 24) / chunkSize
-            for i in 0..<backfillChunks {
-                startOffsets.append(-historyDays * 24 + i * chunkSize)
+            let lookbackChunks = max(0, lookbackHours / chunkSize)
+            for i in 0..<lookbackChunks {
+                startOffsets.append(-lookbackChunks * chunkSize + i * chunkSize)
             }
         }
         let forwardChunks = max(1, Int((Double(hours) / Double(chunkSize)).rounded(.up)))
@@ -42,7 +53,7 @@ public actor GracenoteIngestService {
         }
 
         #if DEBUG
-        print("[Lucent][Gracenote] refresh start lineup=\(lineup.lineupID) postal=\(lineup.postalCode) hours=\(hours) historyDays=\(historyDays) backfillDone=\(backfillDone) totalChunks=\(startOffsets.count)")
+        print("[Lucent][Gracenote] refresh start lineup=\(lineup.lineupID) postal=\(lineup.postalCode) hours=\(hours) lookbackHours=\(lookbackHours) historyDays=\(historyDays) backfillDone=\(backfillDone) totalChunks=\(startOffsets.count)")
         #endif
         var totalChannels = 0
         var totalEvents = 0

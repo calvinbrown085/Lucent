@@ -61,18 +61,22 @@ enum ProgramType {
         return .drama
     }
 
+    /// One perceptual family: every stop pair is oklch(0.32 0.07 H) →
+    /// oklch(0.45 0.10 H), hue per genre, pre-converted to sRGB. Keeping
+    /// lightness/chroma constant means no genre's focused cell shouts louder
+    /// than another; edit hues, not individual hexes.
     var gradient: LinearGradient {
         let stops: [Color]
         switch self {
-        case .drama:   stops = [Color(hex: 0x1A2342), Color(hex: 0x2C4070)]
-        case .sports:  stops = [Color(hex: 0x3D1F0E), Color(hex: 0x7A3A18)]
-        case .news:    stops = [Color(hex: 0x1A1F2C), Color(hex: 0x36465E)]
-        case .kids:    stops = [Color(hex: 0x2A1F4A), Color(hex: 0x5E3A8A)]
-        case .movie:   stops = [Color(hex: 0x2A0E1A), Color(hex: 0x5E1F3A)]
-        case .reality: stops = [Color(hex: 0x1F2A1A), Color(hex: 0x3E5A36)]
-        case .comedy:  stops = [Color(hex: 0x3A2A0E), Color(hex: 0x7A5A1A)]
-        case .doc:     stops = [Color(hex: 0x0E2A2A), Color(hex: 0x1F5A5A)]
-        case .game:    stops = [Color(hex: 0x2A1A2A), Color(hex: 0x5A2A5A)]
+        case .drama:   stops = [Color(hex: 0x203156), Color(hex: 0x38538D)] // H 264
+        case .sports:  stops = [Color(hex: 0x4D2809), Color(hex: 0x7F4413)] // H 55
+        case .news:    stops = [Color(hex: 0x013752), Color(hex: 0x005C86)] // H 238
+        case .kids:    stops = [Color(hex: 0x3B294F), Color(hex: 0x624581)] // H 305
+        case .movie:   stops = [Color(hex: 0x4F222E), Color(hex: 0x823B4E)] // H 5
+        case .reality: stops = [Color(hex: 0x133C1F), Color(hex: 0x236436)] // H 150
+        case .comedy:  stops = [Color(hex: 0x3E3200), Color(hex: 0x675400)] // H 95
+        case .doc:     stops = [Color(hex: 0x003D41), Color(hex: 0x00656B)] // H 200
+        case .game:    stops = [Color(hex: 0x462444), Color(hex: 0x743F6F)] // H 330
         }
         return LinearGradient(colors: stops, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
@@ -491,17 +495,13 @@ private struct GuideChannelRailCell: View {
                     .font(.system(size: 22, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(GuideTokens.text)
-                HStack(spacing: 6) {
-                    Text(channel.guideName)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(GuideTokens.text3)
-                        .lineLimit(1)
-                    if channel.isHD {
-                        Text("· HD")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(GuideTokens.accent)
-                    }
-                }
+                // No per-row HD tag: nearly every OTA channel is HD, so it
+                // reads as noise repeated down the rail. HD lives in the
+                // channel cards and the hero badge instead.
+                Text(channel.guideName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(GuideTokens.text3)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -627,17 +627,13 @@ private struct GuideProgramCell: View {
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                 }
             }
-            if let subtitle = program.subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(.system(size: 16))
-                    .foregroundStyle(subTextColor)
-                    .lineLimit(1)
-            } else {
-                Text(program.start, format: .dateTime.hour().minute())
-                    .font(.system(size: 14))
-                    .foregroundStyle(subTextColor)
-                    .monospacedDigit()
-            }
+            // Airtime is always visible — it's the one datum every EPG glance
+            // needs; the subtitle appends rather than replacing it.
+            Text(metaLine)
+                .font(.system(size: 14))
+                .foregroundStyle(subTextColor)
+                .monospacedDigit()
+                .lineLimit(1)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -666,6 +662,15 @@ private struct GuideProgramCell: View {
         } else {
             GuideTokens.surface
         }
+    }
+
+    private var metaLine: String {
+        let f = Date.FormatStyle().hour(.defaultDigits(amPM: .omitted)).minute()
+        let range = "\(program.start.formatted(f)) – \(program.stop.formatted(f))"
+        if let subtitle = program.subtitle, !subtitle.isEmpty {
+            return "\(range) · \(subtitle)"
+        }
+        return range
     }
 
     private var clampedStart: Date { max(program.start, viewportStart) }

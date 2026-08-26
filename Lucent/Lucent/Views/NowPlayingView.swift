@@ -269,8 +269,7 @@ struct NowPlayingView: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(GuideTokens.text)
                 .padding(14)
-                .background(Color.black.opacity(0.55), in: .circle)
-                .overlay(Circle().stroke(GuideTokens.borderStrong, lineWidth: 1))
+                .glassEffect(.regular, in: .circle)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close")
@@ -289,8 +288,9 @@ struct NowPlayingView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
-        .background(Color.black.opacity(0.55), in: .capsule)
-        .overlay(Capsule().stroke(GuideTokens.borderStrong, lineWidth: 1))
+        // One glass material across every overlay chip — this is the app's
+        // navigation layer, where Liquid Glass belongs (never on content).
+        .glassEffect(.regular, in: .capsule)
     }
 
     private var programChip: some View {
@@ -317,11 +317,7 @@ struct NowPlayingView: View {
         .frame(maxWidth: 700, alignment: .leading)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
-        .background(Color.black.opacity(0.55), in: .rect(cornerRadius: 22))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(GuideTokens.borderStrong, lineWidth: 1)
-        )
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
     }
 
     private var sleepChip: some View {
@@ -387,8 +383,7 @@ struct NowPlayingView: View {
                 .font(.title)
                 .foregroundStyle(isFav ? GuideTokens.accent2 : GuideTokens.text)
                 .padding(20)
-                .background(Color.black.opacity(0.55), in: .circle)
-                .overlay(Circle().stroke(GuideTokens.borderStrong, lineWidth: 1))
+                .glassEffect(.regular, in: .circle)
         }
         .buttonStyle(.plain)
     }

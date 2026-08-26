@@ -267,12 +267,17 @@ struct TimelineGuideView: View {
         }
         didLoad = false
         let (from, to) = Self.window(forOffset: dayOffset)
+        let result: [Program]
         do {
-            let result = try await appModel.programs(for: channel, from: from, to: to)
-            programs = result
+            result = try await appModel.programs(for: channel, from: from, to: to)
         } catch {
-            programs = []
+            result = []
         }
+        // A rapid channel/day switch cancels this task, but the DB read doesn't
+        // abort mid-flight — a stale result could land after the replacement
+        // task's and show the wrong channel's listings. Drop it.
+        guard !Task.isCancelled else { return }
+        programs = result
         didLoad = true
     }
 

@@ -198,6 +198,40 @@ public actor EPGStore {
         }
     }
 
+    /// Delete programs that overlap `[from, to)` for the given channels, except
+    /// rows whose id is listed in `freshIDsByChannel` for that channel.
+    ///
+    /// Run after upserting a freshly fetched window: a schedule change gives a
+    /// program a new row id (ids embed the start time), so the superseded row
+    /// isn't overwritten by the upsert and would otherwise overlap the guide
+    /// until the history purge ages it out. Channels mapped to an empty id list
+    /// are skipped — an empty window in a refresh response is more likely a
+    /// partial upstream response than a genuinely blank schedule, and evicting
+    /// on it would wipe good cache. Returns the number of rows deleted.
+    @discardableResult
+    public func evictStalePrograms(
+        from: Date,
+        to: Date,
+        freshIDsByChannel: [String: [String]]
+    ) async throws -> Int {
+        let fromEpoch = Int64(from.timeIntervalSince1970)
+        let toEpoch = Int64(to.timeIntervalSince1970)
+        let channels = freshIDsByChannel.filter { !$0.value.isEmpty }
+        guard !channels.isEmpty else { return 0 }
+        return try await dbQueue.write { db in
+            var deleted = 0
+            for (channelID, freshIDs) in channels {
+                deleted += try Program
+                    .filter(Program.Columns.channelXmltvID == channelID)
+                    .filter(Program.Columns.stop > fromEpoch)
+                    .filter(Program.Columns.start < toEpoch)
+                    .filter(!freshIDs.contains(Program.Columns.id))
+                    .deleteAll(db)
+            }
+            return deleted
+        }
+    }
+
     public func purgeOlderThan(_ date: Date) async throws {
         let epoch = Int64(date.timeIntervalSince1970)
         try await dbQueue.write { db in

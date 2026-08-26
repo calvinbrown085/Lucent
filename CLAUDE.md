@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Lucent** is a native **tvOS 26** app for watching live TV from an **HDHomeRun** tuner, with EPG data from either **Gracenote** (default, postal-code-based) or a self-hosted **XMLTV** URL. v1 goal: beat Jellyfin's Live TV on instant guide grid, instant channel switching, and correct **Liquid Glass** usage.
+**Lucent** is a native app for watching live TV from an **HDHomeRun** tuner, with EPG data from either **Gracenote** (default, postal-code-based) or a self-hosted **XMLTV** URL. **tvOS 26** is the primary target; the same app target also builds for **iOS / iPadOS 26** (`TARGETED_DEVICE_FAMILY = 1,2,3`). v1 goal: beat Jellyfin's Live TV on instant guide grid, instant channel switching, and correct **Liquid Glass** usage.
 
 ### Locked tech stack — do not propose alternates
 - Swift 6 with strict concurrency (`SWIFT_STRICT_CONCURRENCY = complete`, `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`)
@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `@Observable` (Observation framework), not `ObservableObject`
 
 ### v1 scope is locked tight
-HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / Top Shelf. Don't propose adding these. (PiP shipped on iOS / iPadOS via sample-buffer pump from VLC into `AVSampleBufferDisplayLayer`; tvOS has no AVPiP and stays without.)
+HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / Top Shelf. Don't propose adding these. **PiP is also out**: an iOS sample-buffer-pump implementation existed but was removed ("Remove pip for now" — `PIPController`, `PIPFrameSource`, `VLCVideoMemoryBridge` are gone and the bridging header is now empty); don't resurrect it without being asked.
 
 ### Liquid Glass usage rule
 Liquid Glass goes on the **navigation layer only** (tab bar, `NowPlayingView` overlay chips, Settings sheet buttons). **Never** on content (channel cards, EPG cells, video). Don't wrap `VLCPlayerView` in a `UIVisualEffectView` — VLC draws into a `CAEAGLLayer`/`CAMetalLayer` and you'll get black squares. Glass overlays must be sibling SwiftUI layers.
@@ -30,10 +30,11 @@ Lucent/                           — repo root
 │   ├── Lucent.xcodeproj/
 │   └── Lucent/                   — app sources (PBXFileSystemSynchronizedRootGroup)
 │       ├── AppModel.swift        — top-level @Observable, owns everything
-│       ├── Player/               — PlayerCoordinator + VLCPlayerView
-│       ├── Settings/             — SettingsStore (UserDefaults-backed)
+│       ├── Player/               — PlayerCoordinator, VLCPlayerView, SleepTimer,
+│       │                           AudioLatencyMonitor, AudioSessionConfigurator (iOS-only)
+│       ├── Settings/             — SettingsStore (UserDefaults-backed) + FavoritesCloudSync (iCloud KVS)
 │       ├── Location/             — CoreLocation → postal code
-│       └── Views/                — SwiftUI screens
+│       └── Views/                — SwiftUI screens (adaptive via LayoutMetrics)
 ├── TVCore/                       — sibling Swift package (cross-platform data layer)
 │   └── Sources/TVCore/
 │       ├── Models/               — Channel, Program, Source
@@ -42,8 +43,13 @@ Lucent/                           — repo root
 │       └── Guide/Gracenote/      — GracenoteAPIClient + IngestService
 ├── Frameworks/                   — gitignored, holds TVVLCKit.xcframework (~600 MB) + MobileVLCKit.xcframework (~264 MB)
 ├── scripts/fetch-tvvlckit.sh     — populates Frameworks/ for tvOS builds
-└── scripts/fetch-mobilevlckit.sh — populates Frameworks/ for iOS / iPadOS builds
+├── scripts/fetch-mobilevlckit.sh — populates Frameworks/ for iOS / iPadOS builds
+├── scripts/generate-placeholder-icons.sh — regenerates placeholder app icons (idempotent)
+├── tools/logo-gen/               — standalone SwiftPM CLI that renders the app logo assets
+└── docs/                         — static marketing/support/privacy site (plain HTML)
 ```
+
+CI: `.github/workflows/swift.yml` runs `swift build` / `swift test` on macos-latest for pushes/PRs to main.
 
 The Xcode project uses `PBXFileSystemSynchronizedRootGroup` for `Lucent/Lucent/`, so **new Swift files under that folder are automatically target members — no pbxproj edits needed for source files**. Swift package products and frameworks still need explicit pbxproj entries.
 
@@ -68,6 +74,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project Lucent/Lucent.xcodeproj -scheme Lucent \
   -destination "platform=tvOS Simulator,name=Apple TV 4K (3rd generation),OS=latest" build
 
+# Build for the iOS Simulator (same scheme — one multi-platform target)
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild -project Lucent/Lucent.xcodeproj -scheme Lucent \
+  -destination "platform=iOS Simulator,name=iPhone 16 Pro,OS=latest" build
+
 # Run TVCore unit tests (swift-testing)
 cd TVCore && DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 
@@ -84,7 +95,10 @@ Don't try to `sudo xcode-select -s ...` — interactive sudo isn't available fro
 
 ```
 LucentApp ──creates──▶ AppModel ──owns──▶ SettingsStore        (UserDefaults)
-                                ──owns──▶ PlayerCoordinator    (TVVLCKit, app-target only)
+                                ──owns──▶ FavoritesCloudSync   (iCloud key-value store)
+                                ──owns──▶ PlayerCoordinator    (VLCKit, app-target only)
+                                ──owns──▶ SleepTimer           (countdown + "still watching?" warning)
+                                ──owns──▶ AudioLatencyMonitor  (route latency → VLC audio delay)
                                 ──owns──▶ LocationService      (CoreLocation → postalCode)
                                 ──owns──▶ EPGStore             (GRDB actor, Documents/epg.sqlite)
                                 ──owns──▶ EPGService           (XMLTV path)
@@ -98,10 +112,10 @@ LucentApp ──creates──▶ AppModel ──owns──▶ SettingsStore     
 
 `SettingsStore.guideSource` switches between `.gracenote` and `.xmltvURL`:
 
-- **Gracenote**: `GracenoteIngestService` hits `tvlistings.gracenote.com/api/grid` in 6-hour chunks (the endpoint's `timespan` cap), maps each chunk to an `XMLTVEvent` stream, and feeds it through `EPGStore.ingest`.
+- **Gracenote**: `GracenoteIngestService` hits `tvlistings.gracenote.com/api/grid` in 6-hour chunks (the endpoint's `timespan` cap), maps each chunk to an `XMLTVEvent` stream, and feeds it through `EPGStore.ingest`. It also fetches one **lookback** chunk before the anchor (so in-progress programs aren't missing), ordered first so a mid-refresh network drop still leaves "now" covered.
 - **XMLTV**: `EPGService.refresh(from:)` does `URLSession.download` to a temp file, then `XMLTVParser.parse(contentsOf:)` SAX-streams it through the same ingest path. Always download to disk first — never load XMLTV into memory.
 
-Both paths converge on `EPGStore.ingest(AsyncThrowingStream<XMLTVEvent>)`, which writes in **500-row transactions** so a 100k-program ingest doesn't hold one giant write lock. After every refresh, `purgeOlderThan(now - 6h)` trims the cache.
+Both paths converge on `EPGStore.ingest(AsyncThrowingStream<XMLTVEvent>)`, which writes in **500-row transactions** so a 100k-program ingest doesn't hold one giant write lock. Purge policies differ per path: Gracenote keeps `historyDays` (7 days) of history; XMLTV purges programs that ended more than 6 hours ago.
 
 ### The xmltvID join key (this is the subtle part)
 
@@ -118,16 +132,24 @@ Per-channel overrides live in `SettingsStore.xmltvOverrides`. **When you change 
 
 `PlayerCoordinator` keeps a small pool of **prewarmed** `VLCMediaPlayer`s for the channels above and below the active one. On `tune(to:)` it swaps a prewarmed player into `activePlayer` instead of constructing one — that's what makes up/down feel instant. Budget: `min(prewarmCount, availableTuners - 1)` (one tuner is always reserved for the active stream; HDHR4-2US has 2 tuners, so default is 1 prewarm).
 
-VLC live-stream tuning options (set on each `VLCMedia` in `makePlayer`): `network-caching=500`, `live-caching=500`, `clock-jitter=0`, `clock-synchro=0`. Bump `network-caching` if streams stall.
+VLC live-stream tuning options (set on each `VLCMedia` in `makePlayer`): `network-caching=3000`, `live-caching=3000`, `clock-jitter=0`, `clock-synchro=0`, `audio-desync=0`. 3000 ms is deliberate — 1500 ms wasn't enough on iOS over WiFi (sparse MPEG-2 GOPs from HDHR produced "Invalid frame dimensions 0x0" spam); don't lower it without testing on WiFi.
+
+A/V sync is handled at runtime, not via `audio-desync`: `AudioLatencyMonitor` tracks the audio output route's latency and pushes a signed microsecond delay to every player (active + prewarmed) through `PlayerCoordinator.applyAudioDelayToAllPlayers`, which sets `currentAudioPlaybackDelay`. On iOS, `AudioSessionConfigurator.activate()` must run before VLC's first `play()` or VLC settles on `.soloAmbient` and audio dies in the background.
 
 `VLCMediaPlayer` is **not Sendable** and must be used on the main thread. The project-wide `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` makes this automatic for `PlayerCoordinator`.
+
+**Drawable invariant**: libVLC's iOS/tvOS vout binds to `player.drawable` when the video output is created and never re-reads it — reassigning `drawable` on a playing player leaves video rendering in the old view (audio plays, screen black). All players render into the single persistent `PlayerCoordinator.drawableHost` UIView (bound before `play()`), and `VLCPlayerView` moves video between screens (hero preview ⇄ fullscreen) by reparenting that host view. Never set `drawable` on a live player.
+
+### Adaptive layout (iOS/iPadOS vs tvOS)
+
+`LayoutMetrics` (`Views/LayoutMetrics.swift`) holds per-platform/size-class layout constants, resolved once in `RootView` and injected via `@Environment(\.layoutMetrics)` — views read metrics from the environment instead of querying `horizontalSizeClass` themselves. tvOS short-circuits to a fixed 1920×1080 profile. When `metrics.useTimelineGuide` is true (iPhone portrait), `TimelineGuideView` replaces the wall-of-grid `GuideView.gridBody`.
 
 ## Bundle / project conventions
 
 - App target name is **Lucent** (earlier spec drafts called it "HDHRTV" — ignore those).
 - Bundle ID `CalvinBrown.Lucent`.
-- App Group entitlement removed for v1 (was `group.dev.lucent.shared`, reserved for a future Top Shelf extension). Re-add to `Lucent.entitlements` when Top Shelf lands.
-- Deployment target tvOS 26.2.
+- `Lucent.entitlements` contains only the iCloud key-value store entitlement (`com.apple.developer.ubiquity-kvstore-identifier`), used by `FavoritesCloudSync` to sync favorites across devices. App Group entitlement removed for v1 (was `group.dev.lucent.shared`, reserved for a future Top Shelf extension).
+- Deployment targets: tvOS 26.2, iOS 26.0.
 
 ## Logging conventions
 

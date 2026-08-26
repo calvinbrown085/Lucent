@@ -155,6 +155,7 @@ final class AppModel {
         do {
             try await epgService.refresh(from: url)
             self.lastEPGRefresh = await epgService.lastRefresh
+            bootstrapError = nil
         } catch {
             bootstrapError = "EPG refresh failed: \(error)"
         }
@@ -210,6 +211,9 @@ final class AppModel {
     }
 
     func updatePostalCodeFromLocation() async {
+        // LocationService holds a single continuation per request; a second
+        // concurrent call would overwrite it and strand the first caller.
+        guard !isResolvingLocation else { return }
         isResolvingLocation = true
         locationError = nil
         defer { isResolvingLocation = false }

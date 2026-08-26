@@ -121,6 +121,88 @@ import Foundation
         #expect(result.map(\.title) == ["Show 2", "Show 3"])
     }
 
+    @Test
+    func evictStaleProgramsDropsSupersededRowsButKeepsFreshAndOutOfWindow() async throws {
+        let store = try makeStore()
+        let original = sampleSequence(for: "KCCI.com", anchor: anchor, count: 4, durationMinutes: 30)
+        try await store.ingest(stream(of: original))
+
+        // Schedule change: Show 1 now starts 15 minutes later, which gives it a
+        // new start-anchored id. Upsert leaves the superseded row in place.
+        let shiftedStart = original[1].start.addingTimeInterval(15 * 60)
+        let shifted = Program(
+            id: "KCCI.com:\(Int64(shiftedStart.timeIntervalSince1970))",
+            channelXmltvID: "KCCI.com",
+            title: "Show 1 (moved)",
+            start: shiftedStart,
+            stop: shiftedStart.addingTimeInterval(30 * 60)
+        )
+        try await store.ingest(stream(of: [original[0], shifted, original[2]]))
+
+        // Evict a window covering Shows 0–2, keeping only the fresh ids.
+        // Show 3 starts beyond the window and must survive.
+        let windowEnd = anchor.addingTimeInterval(30 * 60 * 3)
+        let deleted = try await store.evictStalePrograms(
+            from: anchor,
+            to: windowEnd,
+            freshIDsByChannel: ["KCCI.com": [original[0].id, shifted.id, original[2].id]]
+        )
+        #expect(deleted == 1)
+
+        let result = try await store.programs(
+            channelXmltvID: "KCCI.com",
+            from: anchor,
+            to: anchor.addingTimeInterval(60 * 60 * 5)
+        )
+        #expect(result.map(\.title) == ["Show 0", "Show 1 (moved)", "Show 2", "Show 3"])
+    }
+
+    @Test
+    func evictStaleProgramsSkipsChannelsWithEmptyKeepList() async throws {
+        let store = try makeStore()
+        let programs = sampleSequence(for: "KCCI.com", anchor: anchor, count: 2, durationMinutes: 30)
+        try await store.ingest(stream(of: programs))
+
+        // An empty keep-list looks like a partial upstream response — nothing
+        // should be evicted on its account.
+        let deleted = try await store.evictStalePrograms(
+            from: anchor,
+            to: anchor.addingTimeInterval(60 * 60 * 6),
+            freshIDsByChannel: ["KCCI.com": []]
+        )
+        #expect(deleted == 0)
+
+        let result = try await store.programs(
+            channelXmltvID: "KCCI.com",
+            from: anchor,
+            to: anchor.addingTimeInterval(60 * 60 * 5)
+        )
+        #expect(result.count == 2)
+    }
+
+    @Test
+    func evictStaleProgramsLeavesOtherChannelsAlone() async throws {
+        let store = try makeStore()
+        let chA = sampleSequence(for: "A.com", anchor: anchor, count: 2, durationMinutes: 30)
+        let chB = sampleSequence(for: "B.com", anchor: anchor, count: 2, durationMinutes: 30)
+        try await store.ingest(stream(of: chA + chB))
+
+        // Fresh response only covers A.com and keeps just its first program.
+        let deleted = try await store.evictStalePrograms(
+            from: anchor,
+            to: anchor.addingTimeInterval(60 * 60 * 6),
+            freshIDsByChannel: ["A.com": [chA[0].id]]
+        )
+        #expect(deleted == 1)
+
+        let bResult = try await store.programs(
+            channelXmltvID: "B.com",
+            from: anchor,
+            to: anchor.addingTimeInterval(60 * 60 * 5)
+        )
+        #expect(bResult.count == 2)
+    }
+
     // MARK: helpers
 
     /// 2026-04-01 18:00 UTC. Avoiding `.now` keeps the tests deterministic.

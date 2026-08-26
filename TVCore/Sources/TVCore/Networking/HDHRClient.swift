@@ -53,7 +53,6 @@ public actor HDHRClient {
         let entries = try await lineup()
         
         return entries.map { entry in
-            print(entry)
             let id = "hdhr:\(device.DeviceID):\(entry.GuideNumber)"
             let xmltvID = xmltvIDForGuideName(entry.GuideName) ?? entry.GuideName
             let url = URL(string: entry.URL) ?? URL(fileURLWithPath: "/dev/null")

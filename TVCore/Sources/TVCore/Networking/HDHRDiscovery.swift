@@ -78,8 +78,11 @@ public actor HDHRDiscovery {
             guard addr.pointee.sa_family == sa_family_t(AF_INET) else { continue }
 
             let name = String(cString: cursor.pointee.ifa_name)
-            // Skip VPN tunnels, AWDL, p2p — we want the LAN interface.
-            if name.hasPrefix("utun") || name.hasPrefix("awdl") || name.hasPrefix("llw") || name.hasPrefix("ipsec") {
+            // Skip VPN tunnels, AWDL, p2p, and cellular — we want the LAN
+            // interface. Without the pdp_ip exclusion, an iPhone on cellular
+            // would "discover" the carrier's subnet and probe 254 hosts on it.
+            if name.hasPrefix("utun") || name.hasPrefix("awdl") || name.hasPrefix("llw")
+                || name.hasPrefix("ipsec") || name.hasPrefix("pdp_ip") {
                 continue
             }
 

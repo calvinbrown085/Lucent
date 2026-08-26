@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 #if canImport(TVVLCKit)
 import TVVLCKit
 #elseif canImport(MobileVLCKit)
@@ -18,6 +19,15 @@ final class PlayerCoordinator {
     private(set) var activeChannel: Channel?
     private(set) var activePlayer: VLCMediaPlayer?
 
+    /// The one UIView libVLC ever renders into. VLC's iOS/tvOS video output
+    /// binds to the drawable when the vout is created and never re-reads it,
+    /// so reassigning `drawable` on a playing player leaves video rendering
+    /// in the old, possibly detached view (audio keeps going, screen is
+    /// black). Moving video between screens (hero preview ⇄ fullscreen) is
+    /// therefore done by reparenting this host view — `VLCPlayerView` handles
+    /// that — never by touching `drawable` on a live player.
+    let drawableHost = UIView()
+
     /// User preference, 0–2. Capped further by the available HDHR tuner count.
     var prewarmCount: Int = 1
     /// Set this from the discovered HDHR `TunerCount`. Default 2 (HDHR4-2US).
@@ -33,6 +43,16 @@ final class PlayerCoordinator {
 
     /// Switch active playback to `channel`. Reuses a prewarmed player if one exists.
     func tune(to channel: Channel) {
+        // Re-selecting the channel that's already playing is a no-op — falling
+        // through would build a fresh player and re-buffer the live stream from
+        // scratch (~3s of black). A stopped/ended/errored player falls through
+        // so re-tuning still works as a retry.
+        if let prior = activeChannel, prior.id == channel.id,
+           let priorPlayer = activePlayer,
+           priorPlayer.state != .stopped, priorPlayer.state != .ended, priorPlayer.state != .error {
+            return
+        }
+
         // Fully stop (not pause) the prior player so HDHR releases its tuner.
         // Pause keeps the HTTP socket open and the tuner reserved; on a 2-tuner
         // device, two sequential channel switches would otherwise exhaust the
@@ -50,6 +70,10 @@ final class PlayerCoordinator {
             player = makePlayer(for: channel)
         }
 
+        // Bind the drawable before play() so the vout is created against the
+        // persistent host view. Safe on prewarmed players too — they never
+        // played, so no vout exists yet.
+        player.drawable = drawableHost
         player.audio?.isMuted = false
         player.play()
         activePlayer = player

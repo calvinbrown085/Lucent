@@ -83,6 +83,29 @@ public actor GracenoteIngestService {
 
                 let stream = Self.programStream(from: response)
                 try await store.ingest(stream)
+
+                // A schedule change gives a program a new row id (ids embed the
+                // start time), so the superseded row survives the upsert above
+                // and would overlap the guide until the 7-day purge ages it out.
+                // Evict anything in this chunk's window that the fresh response
+                // no longer contains. Failure here is non-fatal — the chunk's
+                // data is already ingested.
+                let chunkEnd = start.addingTimeInterval(Double(chunkSize) * 3600)
+                let freshIDs = Self.programIDsByChannel(from: response)
+                do {
+                    let evicted = try await store.evictStalePrograms(
+                        from: start, to: chunkEnd, freshIDsByChannel: freshIDs
+                    )
+                    #if DEBUG
+                    if evicted > 0 {
+                        print("[Lucent][Gracenote] chunk \(i + 1)/\(startOffsets.count) evicted \(evicted) stale rows")
+                    }
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("[Lucent][Gracenote] stale-row eviction failed: \(error) — continuing")
+                    #endif
+                }
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
@@ -145,6 +168,21 @@ public actor GracenoteIngestService {
             }
             continuation.finish()
         }
+    }
+
+    /// The program row ids a grid response produces, grouped by channel join
+    /// key. Built through `makeProgram` so the keep-list for stale-row eviction
+    /// can never drift from what `programStream` actually ingests.
+    static func programIDsByChannel(from response: GracenoteGridResponse) -> [String: [String]] {
+        var out: [String: [String]] = [:]
+        for channel in response.channels {
+            guard let xmltvID = channelXmltvID(for: channel), let events = channel.events else { continue }
+            let ids = events.compactMap { makeProgram(channelXmltvID: xmltvID, event: $0)?.id }
+            if !ids.isEmpty {
+                out[xmltvID, default: []].append(contentsOf: ids)
+            }
+        }
+        return out
     }
 
     /// Gracenote's `thumbnail` field is a path like `/assets/p10001_h_h15_aa.png`

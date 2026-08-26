@@ -325,11 +325,14 @@ struct GuideView: View {
     }
 
     /// Vertical red bar at the current time, layered above the rows.
+    /// TimelineView keeps it moving while the guide sits idle — computing from
+    /// `Date.now` in a plain body freezes it until something else invalidates
+    /// the view.
     private var nowLineOverlay: some View {
-        let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
-        let visibleWidth = CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth
-        let isInWindow = nowOffset >= 0 && nowOffset <= visibleWidth
-        return Group {
+        TimelineView(.everyMinute) { context in
+            let nowOffset = CGFloat(context.date.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
+            let visibleWidth = CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth
+            let isInWindow = nowOffset >= 0 && nowOffset <= visibleWidth
             if isInWindow {
                 Rectangle()
                     .fill(GuideTokens.live)
@@ -342,6 +345,7 @@ struct GuideView: View {
             }
         }
     }
+
 
     private static func snapToHalfHour(_ date: Date) -> Date {
         let interval: TimeInterval = 30 * 60
@@ -373,19 +377,22 @@ private struct GuideTimeHeader: View {
                 }
             }
 
-            // Floating red "now" pill
-            let nowOffset = CGFloat(Date.now.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
-            let visibleWidth = CGFloat(slotCount) * metrics.guideTimeColumnWidth
-            if nowOffset >= 0 && nowOffset <= visibleWidth {
-                Text(Date.now, format: .dateTime.hour().minute())
-                    .font(.system(size: 16, weight: .heavy))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(GuideTokens.live, in: .rect(cornerRadius: 6))
-                    .shadow(color: GuideTokens.live.opacity(0.5), radius: 8, x: 0, y: 0)
-                    .offset(x: metrics.guideChannelRailWidth + nowOffset - 24, y: -4)
+            // Floating red "now" pill. TimelineView keeps the clock text and
+            // position current while the guide sits idle.
+            TimelineView(.everyMinute) { context in
+                let nowOffset = CGFloat(context.date.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
+                let visibleWidth = CGFloat(slotCount) * metrics.guideTimeColumnWidth
+                if nowOffset >= 0 && nowOffset <= visibleWidth {
+                    Text(context.date, format: .dateTime.hour().minute())
+                        .font(.system(size: 16, weight: .heavy))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(GuideTokens.live, in: .rect(cornerRadius: 6))
+                        .shadow(color: GuideTokens.live.opacity(0.5), radius: 8, x: 0, y: 0)
+                        .offset(x: metrics.guideChannelRailWidth + nowOffset - 24, y: -4)
+                }
             }
         }
         .frame(height: 32, alignment: .topLeading)
@@ -451,11 +458,17 @@ private struct GuideRowView: View {
     private func loadPrograms() async {
         let from = viewportStart.addingTimeInterval(-3600)
         let to = windowEnd.addingTimeInterval(3600)
+        let result: [Program]
         do {
-            programs = try await appModel.programs(for: channel, from: from, to: to)
+            result = try await appModel.programs(for: channel, from: from, to: to)
         } catch {
-            programs = []
+            result = []
         }
+        // .task(id:) cancelled us if the viewport moved on — the DB read
+        // doesn't abort mid-flight, so a stale result can land after the
+        // replacement task's. Drop it instead of clobbering newer data.
+        guard !Task.isCancelled else { return }
+        programs = result
         didLoad = true
     }
 
@@ -484,7 +497,7 @@ private struct GuideChannelRailCell: View {
                         .foregroundStyle(GuideTokens.text3)
                         .lineLimit(1)
                     if channel.isHD {
-                        Text("· 4K")
+                        Text("· HD")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(GuideTokens.accent)
                     }
@@ -732,7 +745,7 @@ private struct GuideHeroCardView: View {
                     .lineLimit(1)
                 Spacer()
                 if channel.isHD {
-                    UHDBadge()
+                    HDBadge()
                 }
             }
             .padding(.horizontal, 18)
@@ -903,9 +916,9 @@ private struct GuideHeroSecondaryButtonStyle: ButtonStyle {
 
 // MARK: - Badges
 
-struct UHDBadge: View {
+struct HDBadge: View {
     var body: some View {
-        Text("4K HDR")
+        Text("HD")
             .font(.system(size: 14, weight: .heavy))
             .tracking(0.6)
             .foregroundStyle(Color(hex: 0x1A0A04))

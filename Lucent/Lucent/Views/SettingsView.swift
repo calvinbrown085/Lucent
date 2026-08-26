@@ -173,6 +173,13 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: settings.guideSource) { _, _ in
+                // The EPG join key (xmltvID) depends on the active source —
+                // Gracenote keys by guideNumber, XMLTV by guideName. Re-resolve
+                // immediately so the guide doesn't query with stale keys until
+                // the next manual refresh.
+                appModel.rebuildChannelMapping()
+            }
             .task {
                 if appModel.discoveredDevices.isEmpty && !appModel.isScanning {
                     await appModel.scanForDevices()

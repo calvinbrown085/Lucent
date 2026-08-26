@@ -122,6 +122,23 @@ import Testing
         #expect(kcciPrograms.map(\.title) == ["Local News", "Game Show Hour"])
     }
 
+    @Test
+    func programIDsByChannelMatchesWhatProgramStreamIngests() async throws {
+        let response = try loadFixture()
+        let ids = GracenoteIngestService.programIDsByChannel(from: response)
+
+        var streamed: [String: [String]] = [:]
+        for try await event in GracenoteIngestService.programStream(from: response) {
+            if case .program(let p) = event {
+                streamed[p.channelXmltvID, default: []].append(p.id)
+            }
+        }
+        #expect(ids == streamed)
+        // The empty-callsign channel has no events and must not appear with an
+        // empty array — eviction treats a listed channel as "safe to evict".
+        #expect(ids["5.1"] == nil)
+    }
+
     // MARK: helpers
 
     private func loadFixture() throws -> GracenoteGridResponse {

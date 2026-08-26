@@ -17,10 +17,17 @@ final class AudioLatencyMonitor {
     /// platform if route compensation alone leaves a systematic offset.
     var videoPipelineLatencyMicros: Int = 0
 
+    /// User-tunable A/V sync trim from Settings (microseconds, positive delays
+    /// audio). Folded into every recompute on top of the route compensation —
+    /// this is the knob for "voices arrive before lips move".
+    var userOffsetMicros: Int = 0
+
     /// Clamp on what we'll send to VLC. AirPlay / Bluetooth can report
     /// 1–2 seconds of output latency; passing that verbatim degrades audio
-    /// quality more than the residual sync error it would correct.
-    let maxAbsDelayMicros: Int = 500_000
+    /// quality more than the residual sync error it would correct. Wide
+    /// enough that a full ±500 ms user trim survives on top of the route
+    /// compensation.
+    let maxAbsDelayMicros: Int = 1_000_000
 
     private(set) var currentAudioDelayMicros: Int = 0
 
@@ -55,7 +62,7 @@ final class AudioLatencyMonitor {
 
     func recompute(reason: String) {
         let outputLatencyMicros = Int(AVAudioSession.sharedInstance().outputLatency * 1_000_000)
-        let raw = videoPipelineLatencyMicros - outputLatencyMicros
+        let raw = videoPipelineLatencyMicros + userOffsetMicros - outputLatencyMicros
         let clamped = max(-maxAbsDelayMicros, min(maxAbsDelayMicros, raw))
         guard clamped != currentAudioDelayMicros else { return }
         currentAudioDelayMicros = clamped

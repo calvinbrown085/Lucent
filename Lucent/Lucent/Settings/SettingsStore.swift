@@ -43,6 +43,12 @@ final class SettingsStore {
         didSet { defaults.set(prewarmCount, forKey: Keys.prewarmCount) }
     }
 
+    /// A/V sync trim in milliseconds. Positive delays audio (for "voices ahead
+    /// of lips"), negative advances it. Applied live via AudioLatencyMonitor.
+    var audioSyncOffsetMillis: Int {
+        didSet { defaults.set(audioSyncOffsetMillis, forKey: Keys.audioSyncOffsetMillis) }
+    }
+
     var guideSource: GuideSource {
         didSet { defaults.set(guideSource.rawValue, forKey: Keys.guideSource) }
     }
@@ -73,6 +79,7 @@ final class SettingsStore {
         self.hdhrIP = defaults.string(forKey: Keys.hdhrIP) ?? ""
         self.xmltvURLString = defaults.string(forKey: Keys.xmltvURL) ?? ""
         self.prewarmCount = defaults.object(forKey: Keys.prewarmCount) as? Int ?? 1
+        self.audioSyncOffsetMillis = defaults.object(forKey: Keys.audioSyncOffsetMillis) as? Int ?? 0
         self.postalCode = defaults.string(forKey: Keys.postalCode) ?? ""
         self.countryCode = defaults.string(forKey: Keys.countryCode) ?? "USA"
         self.lineupIDOverride = defaults.string(forKey: Keys.lineupIDOverride) ?? ""
@@ -141,6 +148,7 @@ final class SettingsStore {
         static let favorites = "favorites"
         static let hiddenChannels = "hiddenChannels"
         static let prewarmCount = "prewarmCount"
+        static let audioSyncOffsetMillis = "audioSyncOffsetMillis"
         static let guideSource = "guideSource"
         static let postalCode = "postalCode"
         static let countryCode = "countryCode"

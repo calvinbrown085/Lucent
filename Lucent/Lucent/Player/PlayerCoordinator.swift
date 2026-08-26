@@ -139,13 +139,16 @@ final class PlayerCoordinator {
         // MPEG-2 GOPs from HDHR plus packet jitter still produced "Invalid
         // frame dimensions 0x0" spam with no video. 3000ms gives the decoder
         // a full GOP of headroom before it tries to render.
-        // VLC's decode/display pipeline lags its audio output by a fixed
-        // amount; positive value delays audio (ms) to realign with picture.
+        // Clock synchro is left at VLC's default (enabled): it continuously
+        // re-aligns audio/video against the broadcast PCR clock, which is
+        // what absorbs per-device A/V offset on a live stream. It was
+        // previously disabled (clock-jitter=0, clock-synchro=0) for faster
+        // lock-on, but that froze in a constant lip-sync error with nothing
+        // to correct it. Restore those two options only if tuning lock-on
+        // regresses badly — and expect to need the manual audio-sync trim.
         let options: [String: NSNumber] = [
             "network-caching": NSNumber(value: 3000),
             "live-caching": NSNumber(value: 3000),
-            "clock-jitter": NSNumber(value: 0),
-            "clock-synchro": NSNumber(value: 0),
             "audio-desync": NSNumber(value: 0),
         ]
         media.addOptions(options)

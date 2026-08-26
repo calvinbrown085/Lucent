@@ -60,6 +60,7 @@ final class AppModel {
         // cancels the audio output latency. 100 ms is a starting guess; tune
         // up to delay audio more, down to advance audio more.
         audioMonitor.videoPipelineLatencyMicros = 50_000
+        audioMonitor.userOffsetMicros = settings.audioSyncOffsetMillis * 1000
         audioMonitor.onChange = { [weak self] micros in
             self?.player.applyAudioDelayToAllPlayers(micros)
         }
@@ -352,6 +353,16 @@ final class AppModel {
 
     func isFavorite(_ channel: Channel) -> Bool {
         settings.favorites.contains(channel.id)
+    }
+
+    /// Adjust the user A/V sync trim (milliseconds, positive delays audio) and
+    /// apply it to all live players immediately so it can be tuned by ear
+    /// during playback.
+    func setAudioSyncOffset(millis: Int) {
+        let clamped = max(-500, min(500, millis))
+        settings.audioSyncOffsetMillis = clamped
+        audioMonitor.userOffsetMicros = clamped * 1000
+        audioMonitor.recompute(reason: "userTrim")
     }
 
     func setPrewarmCount(_ count: Int) {

@@ -130,6 +130,37 @@ struct SettingsView: View {
                     Text("Each prewarmed channel uses one HDHomeRun tuner. Lower this if streams stall.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    HStack {
+                        Text("Audio sync")
+                        Spacer()
+                        Button {
+                            appModel.setAudioSyncOffset(millis: settings.audioSyncOffsetMillis - 25)
+                        } label: {
+                            Image(systemName: "minus.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(settings.audioSyncOffsetMillis <= -500)
+                        Text(audioSyncLabel)
+                            .monospacedDigit()
+                            .frame(minWidth: 90)
+                            .foregroundStyle(.secondary)
+                        Button {
+                            appModel.setAudioSyncOffset(millis: settings.audioSyncOffsetMillis + 25)
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(settings.audioSyncOffsetMillis >= 500)
+                    }
+                    if settings.audioSyncOffsetMillis != 0 {
+                        Button("Reset audio sync") {
+                            appModel.setAudioSyncOffset(millis: 0)
+                        }
+                    }
+                    Text("If voices land before lips move, tap + to delay audio until they match. Takes effect immediately during playback.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Channels") {
@@ -186,6 +217,11 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var audioSyncLabel: String {
+        let millis = appModel.settings.audioSyncOffsetMillis
+        return millis > 0 ? "+\(millis) ms" : "\(millis) ms"
     }
 
     private func testConnection() async {

@@ -232,6 +232,27 @@ public actor EPGStore {
         }
     }
 
+    /// Delete every program whose `channelXmltvID` starts with `prefix`.
+    ///
+    /// Demo mode owns the `demo.` prefix, so this removes exactly the generated
+    /// sample listings and leaves a user's real Gracenote/XMLTV cache intact.
+    /// Matched with `substr` rather than `LIKE` so `_` and `%` in a prefix stay
+    /// literal. Returns the number of rows deleted.
+    @discardableResult
+    public func deletePrograms(channelXmltvIDPrefix prefix: String) async throws -> Int {
+        guard !prefix.isEmpty else { return 0 }
+        return try await dbQueue.write { db in
+            let deleted = try Program
+                .filter(sql: "substr(channelXmltvID, 1, ?) = ?", arguments: [prefix.count, prefix])
+                .deleteAll(db)
+            try db.execute(
+                sql: "DELETE FROM channel_icon WHERE substr(xmltvID, 1, ?) = ?",
+                arguments: [prefix.count, prefix]
+            )
+            return deleted
+        }
+    }
+
     public func purgeOlderThan(_ date: Date) async throws {
         let epoch = Int64(date.timeIntervalSince1970)
         try await dbQueue.write { db in

@@ -454,7 +454,13 @@ private struct GuideRowView: View {
             )
             .clipped()
         }
-        .task(id: TaskKey(channelID: channel.id, viewportStart: viewportStart)) {
+        .task(
+            id: TaskKey(
+                channelID: channel.id,
+                viewportStart: viewportStart,
+                epgRefresh: appModel.lastEPGRefresh
+            )
+        ) {
             await loadPrograms()
         }
     }
@@ -479,6 +485,11 @@ private struct GuideRowView: View {
     private struct TaskKey: Hashable {
         let channelID: String
         let viewportStart: Date
+        /// Rows are loaded once per channel+viewport, so without this a row
+        /// that rendered before the guide finished refreshing would sit on
+        /// "No listings" until the viewport moved. Bumping the key on every
+        /// completed refresh reloads exactly once per refresh.
+        let epgRefresh: Date?
     }
 }
 
@@ -726,11 +737,12 @@ private struct GuideHeroCardView: View {
                 endRadius: 240
             )
 
-            // Live layer: VLCPlayerView crossfades in once the active player
-            // is on the focused channel. .id() rebuilds the view on channel
+            // Live layer: the picture crossfades in once the active player is
+            // on the focused channel (`LiveVideoLayer` resolves to VLC, or to
+            // the demo ident in demo mode). .id() rebuilds the view on channel
             // change rather than mutating in place.
             if showLivePreview {
-                VLCPlayerView()
+                LiveVideoLayer(channel: channel, program: program, compact: true)
                     .id(channel.id)
                     .transition(.opacity)
                 // Bottom legibility scrim so the call sign stays readable

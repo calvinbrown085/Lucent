@@ -57,6 +57,13 @@ final class SettingsStore {
         didSet { defaults.set(hideChannelsWithoutGuide, forKey: Keys.hideChannelsWithoutGuide) }
     }
 
+    /// True while generated demo listings are sitting in the EPG cache. Survives
+    /// relaunch so `AppModel` can purge them on the first non-demo bootstrap
+    /// instead of scanning the whole program table on every launch.
+    var demoListingsPresent: Bool {
+        didSet { defaults.set(demoListingsPresent, forKey: Keys.demoListingsPresent) }
+    }
+
     var postalCode: String {
         didSet { defaults.set(postalCode, forKey: Keys.postalCode) }
     }
@@ -89,6 +96,7 @@ final class SettingsStore {
             self.guideSource = .gracenote
         }
         self.hideChannelsWithoutGuide = defaults.bool(forKey: Keys.hideChannelsWithoutGuide)
+        self.demoListingsPresent = defaults.bool(forKey: Keys.demoListingsPresent)
 
         if let data = defaults.data(forKey: Keys.xmltvOverrides),
            let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
@@ -154,5 +162,6 @@ final class SettingsStore {
         static let countryCode = "countryCode"
         static let lineupIDOverride = "lineupIDOverride"
         static let hideChannelsWithoutGuide = "hideChannelsWithoutGuide"
+        static let demoListingsPresent = "demoListingsPresent"
     }
 }

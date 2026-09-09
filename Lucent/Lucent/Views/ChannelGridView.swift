@@ -85,6 +85,9 @@ struct ChannelGridView: View {
                 } else {
                     Text("Open Settings and enter your HDHomeRun's IP address.")
                         .foregroundStyle(GuideTokens.text2)
+                    Text("No tuner? Enter “demo” there for a sample lineup.")
+                        .font(.footnote)
+                        .foregroundStyle(GuideTokens.text3)
                 }
                 Button {
                     Task { await appModel.bootstrap() }
@@ -97,6 +100,11 @@ struct ChannelGridView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 80)
     }
+}
+
+private struct NowPlayingKey: Hashable {
+    let channelID: String
+    let epgRefresh: Date?
 }
 
 private struct ChannelCard: View {
@@ -180,7 +188,9 @@ private struct ChannelCard: View {
         #if !os(tvOS)
         .onHover { isHovered = $0 }
         #endif
-        .task(id: channel.id) {
+        // Keyed on the last refresh too, so a card rendered before the guide
+        // finished loading fills in its program title instead of staying blank.
+        .task(id: NowPlayingKey(channelID: channel.id, epgRefresh: appModel.lastEPGRefresh)) {
             nowPlaying = try? await appModel.nowPlaying(for: channel)
         }
     }

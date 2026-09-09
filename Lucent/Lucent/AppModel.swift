@@ -73,6 +73,20 @@ final class AppModel {
         bootstrapError = nil
         favoritesSync.start()
 
+        // Demo mode: skip discovery, the tuner and the network entirely.
+        if isDemoMode {
+            await bootstrapDemo()
+            return
+        }
+
+        // Coming back from demo mode (or launching after it): drop the
+        // generated listings and put the player back on the real pipeline.
+        if player.isDemoMode {
+            player.tearDown()
+            player.isDemoMode = false
+        }
+        await purgeDemoListings()
+
         // First-launch convenience: no IP saved → scan the LAN, and if exactly
         // one HDHR responds, claim it automatically. The first probe to a
         // local IP also triggers the iOS Local Network permission prompt;
@@ -166,6 +180,10 @@ final class AppModel {
     /// postal code; if we don't have one yet, prompt for location.
     func refreshGuide() async {
         rebuildChannelMapping()
+        if isDemoMode {
+            await seedDemoContent()
+            return
+        }
         #if DEBUG
         print("[Lucent][AppModel] refreshGuide source=\(settings.guideSource) channels=\(channels.count) sampleXmltvIDs=\(channels.prefix(5).map(\.xmltvID))")
         #endif
@@ -225,6 +243,75 @@ final class AppModel {
         } catch {
             locationError = (error as? LocalizedError)?.errorDescription ?? String(describing: error)
         }
+    }
+
+    // MARK: - Demo mode
+
+    /// True when the user has typed `demo` into the device-address field.
+    /// Demo mode replaces the tuner, the guide provider and the video decoder
+    /// with locally generated stand-ins so the app can be reviewed end to end
+    /// with no HDHomeRun on the network.
+    var isDemoMode: Bool {
+        DemoContent.isDemoAddress(settings.hdhrIP)
+    }
+
+    /// True once the demo lineup has actually been adopted — `isDemoMode` flips
+    /// as soon as the address field reads `demo`, which is one keystroke before
+    /// the lineup exists. Views use this to avoid re-bootstrapping.
+    var isDemoLoaded: Bool {
+        isDemoMode && device?.DeviceID == DemoContent.deviceID
+    }
+
+    /// Stand-in for the discover + lineup round trip. No network, no scan.
+    private func bootstrapDemo() async {
+        player.isDemoMode = true
+        let info = DemoContent.deviceInfo
+        device = info
+        if let count = info.TunerCount { player.availableTuners = count }
+        channels = DemoContent.channels()
+        await seedDemoContent()
+    }
+
+    /// Regenerate the sample listings and write them through the same
+    /// `EPGStore.ingest` path Gracenote and XMLTV use.
+    ///
+    /// Existing demo rows are dropped first: each seed re-anchors the schedule
+    /// to the current half hour, so rows generated from an older anchor would
+    /// otherwise linger and overlap in the grid.
+    private func seedDemoContent() async {
+        isRefreshingEPG = true
+        defer { isRefreshingEPG = false }
+        do {
+            try await epgStore.deletePrograms(channelXmltvIDPrefix: DemoContent.xmltvIDPrefix)
+            settings.demoListingsPresent = true
+            try await epgStore.ingest(DemoContent.events())
+            lastEPGRefresh = .now
+            bootstrapError = nil
+            await refreshChannelsWithProgramsCache()
+        } catch {
+            bootstrapError = "Demo data could not be loaded: \(error)"
+        }
+    }
+
+    /// Drop the generated listings if any are in the cache. Cheap no-op
+    /// otherwise — the flag is what keeps this off the hot launch path for
+    /// users who have never opened demo mode.
+    private func purgeDemoListings() async {
+        guard settings.demoListingsPresent else { return }
+        try? await epgStore.deletePrograms(channelXmltvIDPrefix: DemoContent.xmltvIDPrefix)
+        settings.demoListingsPresent = false
+    }
+
+    /// Leave demo mode from Settings: stop the simulated stream, clear the
+    /// address field and fall back to a normal first-launch bootstrap, which
+    /// purges the sample listings on its way through.
+    func exitDemoMode() async {
+        settings.hdhrIP = ""
+        channels = []
+        device = nil
+        lastEPGRefresh = nil
+        await bootstrap()
+        await refreshChannelsWithProgramsCache()
     }
 
     // MARK: - Facade for views
@@ -293,6 +380,7 @@ final class AppModel {
     // MARK: - Mutations
 
     func tune(to channel: Channel) {
+        player.isDemoMode = isDemoMode
         player.tune(to: channel)
         updatePrewarmNeighbors(for: channel)
     }
@@ -326,6 +414,12 @@ final class AppModel {
     /// - **XMLTV** uses whatever channel id the source file declares; default
     ///   to `GuideName`, allow per-channel override.
     private func resolvedXmltvID(channelID: String, guideNumber: String, guideName: String) -> String {
+        // Demo listings are keyed by "demo.<guideNumber>" regardless of the
+        // configured guide source, so switching sources (or leaving a stale
+        // override behind) can't break the join while demo mode is on.
+        if isDemoMode {
+            return DemoContent.xmltvID(forGuideNumber: guideNumber)
+        }
         if let override = settings.xmltvOverrides[channelID]?.trimmingCharacters(in: .whitespaces),
            !override.isEmpty {
             return override

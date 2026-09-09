@@ -59,6 +59,11 @@ struct TimelineGuideView: View {
             loadTask?.cancel()
             loadTask = Task { await loadPrograms() }
         }
+        .onChange(of: appModel.lastEPGRefresh) { _, _ in
+            // Listings that landed after this view loaded.
+            loadTask?.cancel()
+            loadTask = Task { await loadPrograms() }
+        }
         .onChange(of: dayOffset) { _, _ in
             loadTask?.cancel()
             loadTask = Task { await loadPrograms() }
@@ -250,6 +255,9 @@ struct TimelineGuideView: View {
             Text("Add an HDHomeRun in Settings.")
                 .font(.subheadline)
                 .foregroundStyle(GuideTokens.text2)
+            Text("No tuner? Enter “demo” there for a sample lineup.")
+                .font(.footnote)
+                .foregroundStyle(GuideTokens.text3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

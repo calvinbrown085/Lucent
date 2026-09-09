@@ -19,6 +19,19 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
                 Form {
+                if appModel.isDemoMode {
+                    Section("Demo mode") {
+                        Label("Demo mode is on", systemImage: "play.tv")
+                            .font(.headline)
+                        Text("Lucent is showing a sample lineup with a week of listings and a simulated picture. No tuner is contacted and nothing is fetched from the network — everything is generated on this device.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Exit demo mode") {
+                            Task { await appModel.exitDemoMode() }
+                        }
+                    }
+                }
+
                 Section("HDHomeRun") {
                     if !appModel.discoveredDevices.isEmpty || appModel.isScanning {
                         Text("Discovered on this network")
@@ -51,6 +64,11 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     TextField("Device IP (e.g. 192.168.1.50)", text: $settings.hdhrIP)
+                    if !appModel.isDemoMode {
+                        Text("No tuner handy? Type “demo” here and tap Test connection to explore Lucent with sample channels and listings.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Button {
                         Task { await testConnection() }
                     } label: {
@@ -70,6 +88,11 @@ struct SettingsView: View {
                 }
 
                 Section("Guide source") {
+                    if appModel.isDemoMode {
+                        Text("Demo listings are generated on this device, so the source below is ignored while demo mode is on. “Refresh now” regenerates the sample week.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Picker("Source", selection: $settings.guideSource) {
                         ForEach(GuideSource.allCases) { src in
                             Text(src.displayName).tag(src)
@@ -204,6 +227,17 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .onChange(of: settings.hdhrIP) { _, newValue in
+                // Typing `demo` into the address field is the whole gesture —
+                // don't make the user find "Test connection" too. The reverse
+                // isn't watched here: mid-edit values like "dem" would fire a
+                // pointless bootstrap against a bogus host. Leaving demo mode
+                // happens on the next bootstrap (Test connection, Exit demo
+                // mode, or relaunch), which purges the sample listings.
+                guard DemoContent.isDemoAddress(newValue), !appModel.isDemoLoaded else { return }
+                testResult = nil
+                Task { await appModel.bootstrap() }
+            }
             .onChange(of: settings.guideSource) { _, _ in
                 // The EPG join key (xmltvID) depends on the active source —
                 // Gracenote keys by guideNumber, XMLTV by guideName. Re-resolve
@@ -212,6 +246,7 @@ struct SettingsView: View {
                 appModel.rebuildChannelMapping()
             }
             .task {
+                guard !appModel.isDemoMode else { return }
                 if appModel.discoveredDevices.isEmpty && !appModel.isScanning {
                     await appModel.scanForDevices()
                 }
@@ -229,7 +264,9 @@ struct SettingsView: View {
         testResult = nil
         defer { testingConnection = false }
         await appModel.bootstrap()
-        if let device = appModel.device {
+        if appModel.isDemoMode {
+            testResult = "Demo mode on — \(appModel.channels.count) sample channels loaded."
+        } else if let device = appModel.device {
             testResult = "Connected to \(device.ModelNumber ?? "device") (\(device.DeviceID))."
         } else if let err = appModel.bootstrapError {
             testResult = "Failed: \(err)"

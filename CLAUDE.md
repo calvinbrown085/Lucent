@@ -117,6 +117,23 @@ LucentApp ──creates──▶ AppModel ──owns──▶ SettingsStore     
 
 Both paths converge on `EPGStore.ingest(AsyncThrowingStream<XMLTVEvent>)`, which writes in **500-row transactions** so a 100k-program ingest doesn't hold one giant write lock. Purge policies differ per path: Gracenote keeps `historyDays` (7 days) of history; XMLTV purges programs that ended more than 6 hours ago.
 
+### Demo mode (App Store review)
+
+Typing `demo` into the device-address field in Settings (`SettingsStore.hdhrIP`)
+switches the app onto `TVCore/Demo/DemoContent.swift`: a fictional 14-station
+lineup plus a generated week of listings, ingested through the same
+`EPGStore.ingest` path as Gracenote and XMLTV. `AppModel.bootstrap()` short-
+circuits before the LAN scan, `refreshGuide()` re-seeds instead of fetching, and
+`PlayerCoordinator.isDemoMode` stops any `VLCMediaPlayer` from being built — the
+UI renders `DemoVideoView` (a synthetic station ident) via `LiveVideoLayer`
+wherever video would go. Nothing touches the network.
+
+Demo rows are keyed `demo.<guideNumber>`, so they can't collide with real cache
+rows; `SettingsStore.demoListingsPresent` remembers they're there and the next
+non-demo `bootstrap()` purges them via
+`EPGStore.deletePrograms(channelXmltvIDPrefix:)`. Keep everything in
+`DemoContent` fictional — no real call signs, network names or show titles.
+
 ### The xmltvID join key (this is the subtle part)
 
 `Program` rows are keyed by `channelXmltvID`. The right key for a `Channel` depends on the active guide source — see `AppModel.resolvedXmltvID`:

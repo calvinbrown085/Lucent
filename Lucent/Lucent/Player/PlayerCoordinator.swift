@@ -33,6 +33,15 @@ final class PlayerCoordinator {
     /// Set this from the discovered HDHR `TunerCount`. Default 2 (HDHR4-2US).
     var availableTuners: Int = 2
 
+    /// Demo mode: there is no tuner and no stream, so no `VLCMediaPlayer` is
+    /// ever built. `tune(to:)` still records the active channel — that's what
+    /// the guide, mini-guide and Now Playing chrome read — and the UI renders
+    /// `DemoVideoView` in place of `VLCPlayerView`. Kept as a stored flag
+    /// rather than inspecting settings so the coordinator stays free of
+    /// dependencies on `AppModel`; `AppModel` sets it on bootstrap and on
+    /// every `tune`.
+    var isDemoMode = false
+
     private var prewarmed: [Channel.ID: VLCMediaPlayer] = [:]
 
     /// Current audio delay (microseconds, signed) to apply to every player.
@@ -63,6 +72,17 @@ final class PlayerCoordinator {
             priorPlayer.media = nil
         }
 
+        // Demo mode stops here: record the channel so the chrome updates, but
+        // never point VLC at the placeholder demo:// URL.
+        if isDemoMode {
+            if activeChannel?.id == channel.id { return }
+            activePlayer?.stop()
+            activePlayer?.media = nil
+            activePlayer = nil
+            activeChannel = channel
+            return
+        }
+
         let player: VLCMediaPlayer
         if let existing = prewarmed.removeValue(forKey: channel.id) {
             player = existing
@@ -86,6 +106,7 @@ final class PlayerCoordinator {
     /// and the available tuner budget — one tuner is always reserved for the
     /// active stream.
     func updatePrewarm(neighbors: [Channel]) {
+        guard !isDemoMode else { return }
         let budget = max(0, min(prewarmCount, availableTuners - 1))
         let target = Array(neighbors.prefix(budget))
         let targetIDs = Set(target.map(\.id))

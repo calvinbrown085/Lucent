@@ -45,7 +45,7 @@ struct NowPlayingView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VLCPlayerView()
+            LiveVideoLayer(channel: currentChannel, program: nowPlaying)
                 .ignoresSafeArea()
 
             if overlayVisible {

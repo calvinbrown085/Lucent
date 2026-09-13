@@ -1,6 +1,41 @@
 import Foundation
 import Observation
 
+/// Which VLC deinterlacer runs on interlaced (1080i / 480i) broadcasts.
+/// Profiled on iPhone 16 Pro Max: VLC's default "x" filter was ~40% of all
+/// app CPU on a 1080i stream — by far the biggest single cost, ahead of the
+/// MPEG-2 decode itself.
+enum DeinterlaceMode: String, CaseIterable, Identifiable, Sendable {
+    case off, fast, quality
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .fast: return "Fast"
+        case .quality: return "Quality"
+        }
+    }
+
+    /// libVLC filter name; nil disables deinterlacing.
+    var vlcFilterName: String? {
+        switch self {
+        case .off: return nil
+        case .fast: return "linear"
+        case .quality: return "x"
+        }
+    }
+
+    static var platformDefault: DeinterlaceMode {
+        #if os(tvOS)
+        return .quality
+        #else
+        return .fast
+        #endif
+    }
+}
+
 enum GuideSource: String, CaseIterable, Identifiable, Sendable {
     case gracenote
     case xmltvURL
@@ -64,6 +99,38 @@ final class SettingsStore {
         didSet { defaults.set(demoListingsPresent, forKey: Keys.demoListingsPresent) }
     }
 
+    /// Most-recently-watched channel IDs, newest first. Drives the "previous
+    /// channel" toggle and the Recent strip in the mini-guide.
+    var recentChannelIDs: [String] {
+        didSet { defaults.set(recentChannelIDs, forKey: Keys.recentChannelIDs) }
+    }
+
+    /// Captions preference persisted across launches.
+    var captionsEnabled: Bool {
+        didSet { defaults.set(captionsEnabled, forKey: Keys.captionsEnabled) }
+    }
+
+    /// iPad: keep the live picture docked beside the guide instead of going
+    /// fullscreen on every tune.
+    var dockedPlayerEnabled: Bool {
+        didSet { defaults.set(dockedPlayerEnabled, forKey: Keys.dockedPlayerEnabled) }
+    }
+
+    /// iOS / iPadOS: route video through the sample-buffer path so system
+    /// Picture in Picture works. Off falls back to VLC's GPU drawable.
+    var pipEnabled: Bool {
+        didSet { defaults.set(pipEnabled, forKey: Keys.pipEnabled) }
+    }
+
+    /// iPhone: use the per-channel timeline list instead of the grid guide.
+    var preferTimelineGuide: Bool {
+        didSet { defaults.set(preferTimelineGuide, forKey: Keys.preferTimelineGuide) }
+    }
+
+    var deinterlaceMode: DeinterlaceMode {
+        didSet { defaults.set(deinterlaceMode.rawValue, forKey: Keys.deinterlaceMode) }
+    }
+
     var postalCode: String {
         didSet { defaults.set(postalCode, forKey: Keys.postalCode) }
     }
@@ -97,6 +164,16 @@ final class SettingsStore {
         }
         self.hideChannelsWithoutGuide = defaults.bool(forKey: Keys.hideChannelsWithoutGuide)
         self.demoListingsPresent = defaults.bool(forKey: Keys.demoListingsPresent)
+        self.recentChannelIDs = defaults.stringArray(forKey: Keys.recentChannelIDs) ?? []
+        self.captionsEnabled = defaults.bool(forKey: Keys.captionsEnabled)
+        self.dockedPlayerEnabled = defaults.object(forKey: Keys.dockedPlayerEnabled) as? Bool ?? true
+        self.pipEnabled = defaults.object(forKey: Keys.pipEnabled) as? Bool ?? true
+        if let raw = defaults.string(forKey: Keys.deinterlaceMode), let mode = DeinterlaceMode(rawValue: raw) {
+            self.deinterlaceMode = mode
+        } else {
+            self.deinterlaceMode = .platformDefault
+        }
+        self.preferTimelineGuide = defaults.bool(forKey: Keys.preferTimelineGuide)
 
         if let data = defaults.data(forKey: Keys.xmltvOverrides),
            let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
@@ -118,6 +195,14 @@ final class SettingsStore {
         } else {
             self.hiddenChannels = []
         }
+    }
+
+    /// Push a channel to the front of the recents list (max 8, unique).
+    func recordRecent(_ channelID: String) {
+        var list = recentChannelIDs.filter { $0 != channelID }
+        list.insert(channelID, at: 0)
+        if list.count > 8 { list.removeLast(list.count - 8) }
+        recentChannelIDs = list
     }
 
     func toggleFavorite(_ channelID: String) {
@@ -163,5 +248,11 @@ final class SettingsStore {
         static let lineupIDOverride = "lineupIDOverride"
         static let hideChannelsWithoutGuide = "hideChannelsWithoutGuide"
         static let demoListingsPresent = "demoListingsPresent"
+        static let recentChannelIDs = "recentChannelIDs"
+        static let captionsEnabled = "captionsEnabled"
+        static let dockedPlayerEnabled = "dockedPlayerEnabled"
+        static let pipEnabled = "pipEnabled"
+        static let deinterlaceMode = "deinterlaceMode"
+        static let preferTimelineGuide = "preferTimelineGuide"
     }
 }

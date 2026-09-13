@@ -61,6 +61,14 @@ struct MiniGuideOverlay: View {
                 Divider().background(GuideTokens.borderStrong)
                 ScrollView {
                     LazyVStack(spacing: 4) {
+                        let recents = appModel.recentChannels.filter { $0.id != activeChannelID }.prefix(4)
+                        if !recents.isEmpty {
+                            sectionLabel("Recent")
+                            ForEach(Array(recents)) { channel in
+                                row(for: channel, idPrefix: "recent:")
+                            }
+                            sectionLabel("All channels")
+                        }
                         ForEach(appModel.visibleChannels) { channel in
                             row(for: channel)
                                 .id(channel.id)
@@ -82,8 +90,19 @@ struct MiniGuideOverlay: View {
         }
     }
 
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.caption2.weight(.heavy))
+            .tracking(1.2)
+            .foregroundStyle(GuideTokens.text4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 30)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+    }
+
     @ViewBuilder
-    private func row(for channel: Channel) -> some View {
+    private func row(for channel: Channel, idPrefix: String = "") -> some View {
         #if os(tvOS)
         MiniGuideRow(
             channel: channel,
@@ -93,7 +112,7 @@ struct MiniGuideOverlay: View {
         ) {
             onTune(channel)
         }
-        .focused($focusedChannelID, equals: channel.id)
+        .focused($focusedChannelID, equals: idPrefix + channel.id)
         #else
         MiniGuideRow(
             channel: channel,

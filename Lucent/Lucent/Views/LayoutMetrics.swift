@@ -19,6 +19,17 @@ struct LayoutMetrics: Sendable, Equatable {
     /// True when the guide should fall back to a per-channel timeline list
     /// (iPhone portrait). False keeps the wall-of-grid layout.
     var useTimelineGuide: Bool
+    /// iPad regular width: keep the live picture docked beside the tabs
+    /// instead of taking over the screen on every tune.
+    var supportsDockedPlayer: Bool = false
+    var dockedPlayerWidth: CGFloat = 400
+    /// 30-minute columns visible at once in the grid guide (8 = 4 hours).
+    var guideVisibleSlots: Int = 8
+    /// Multiplier applied to the guide's fixed point sizes (designed at
+    /// 1920×1080) so the same layout reads on a phone.
+    var typeScale: CGFloat = 1.0
+    /// Phone: drop the hero art tile and horizontally scroll the chip row.
+    var compactGuide: Bool = false
 
     /// Pixels-per-minute for guide grid cell layout. Derived from
     /// `guideTimeColumnWidth` (which is the px-per-30-min slot).
@@ -29,7 +40,7 @@ struct LayoutMetrics: Sendable, Equatable {
     /// past the configured default — so tvOS and any container at-or-above
     /// the design width keep their original metrics.
     func adapted(toContainerWidth width: CGFloat) -> LayoutMetrics {
-        let slotCount: CGFloat = 8 // mirrors GuideTokens.visibleSlots
+        let slotCount = CGFloat(guideVisibleSlots)
         let available = width - guideChannelRailWidth - contentHorizontalPadding
         guard available > 0 else { return self }
         let derived = floor(available / slotCount)
@@ -63,7 +74,8 @@ struct LayoutMetrics: Sendable, Equatable {
         miniGuideWidth: 540,
         contentHorizontalPadding: 40,
         contentMaxWidth: 900,
-        useTimelineGuide: false
+        useTimelineGuide: false,
+        supportsDockedPlayer: true
     )
 
     /// iPhone landscape and Split View on iPad.
@@ -77,20 +89,26 @@ struct LayoutMetrics: Sendable, Equatable {
         miniGuideWidth: nil,
         contentHorizontalPadding: 24,
         contentMaxWidth: nil,
-        useTimelineGuide: false
+        useTimelineGuide: false,
+        guideVisibleSlots: 5,
+        typeScale: 0.62,
+        compactGuide: true
     )
 
     static let iPhoneCompact = LayoutMetrics(
         channelGridColumns: 2,
         guideTimeColumnWidth: 96,
         guideRowHeight: 64,
-        guideChannelRailWidth: 120,
+        guideChannelRailWidth: 96,
         heroCardSize: CGSize(width: 220, height: 140),
-        heroHeight: 180,
+        heroHeight: 150,
         miniGuideWidth: nil,
-        contentHorizontalPadding: 20,
+        contentHorizontalPadding: 16,
         contentMaxWidth: nil,
-        useTimelineGuide: true
+        useTimelineGuide: false,
+        guideVisibleSlots: 3,
+        typeScale: 0.62,
+        compactGuide: true
     )
 
     static func resolve(

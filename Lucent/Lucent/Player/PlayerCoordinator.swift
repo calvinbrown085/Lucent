@@ -42,7 +42,45 @@ final class PlayerCoordinator {
     /// every `tune`.
     var isDemoMode = false
 
+    /// iOS / iPadOS only: render through libVLC memory callbacks into
+    /// `AVSampleBufferDisplayLayer`s instead of the GPU drawable. This is what
+    /// makes system Picture in Picture possible (see `PIPController`). The
+    /// flag is read at `tune` time: `onActivePlayerWillChange` installs the
+    /// callbacks before `play()`, and `drawable` is left unset.
+    var usesMemoryOutput = false
+
+    /// libVLC deinterlace filter name applied to every new player; nil = off.
+    /// Read at `makePlayer` time, so changing it takes effect on next tune.
+    var deinterlaceFilter: String? = DeinterlaceMode.platformDefault.vlcFilterName
+
+    /// Fires inside `tune(to:)` *before* `player.play()` so observers can
+    /// install per-player resources (libVLC requires video callbacks be set
+    /// before playback begins). `nil` means there is no active player.
+    var onActivePlayerWillChange: ((VLCMediaPlayer?) -> Void)?
+
     private var prewarmed: [Channel.ID: VLCMediaPlayer] = [:]
+
+    /// A selectable audio or subtitle track on the active stream. `id` is
+    /// libVLC's track index; `-1` is the "off" entry libVLC lists for subtitles.
+    struct MediaTrack: Identifiable, Hashable {
+        let id: Int
+        let name: String
+    }
+
+    /// Track lists for the active player. libVLC only knows about a stream's
+    /// tracks once the demuxer has run, so these are empty at `tune` time and
+    /// filled in by `refreshTracks()`, which the Now Playing chrome calls when
+    /// it opens the picker. Broadcast MPEG-TS carries CEA-608/708 captions
+    /// and SAP audio here.
+    private(set) var subtitleTracks: [MediaTrack] = []
+    private(set) var audioTracks: [MediaTrack] = []
+    private(set) var currentSubtitleTrackID: Int = -1
+    private(set) var currentAudioTrackID: Int = -1
+
+    /// Caption preference: `nil` means off; otherwise "keep captions on",
+    /// re-applied after every channel change by picking the first real
+    /// subtitle track on the new stream.
+    var captionsPreferred = false
 
     /// Current audio delay (microseconds, signed) to apply to every player.
     /// Driven by `AudioLatencyMonitor` via `applyAudioDelayToAllPlayers(_:)`.
@@ -90,15 +128,103 @@ final class PlayerCoordinator {
             player = makePlayer(for: channel)
         }
 
-        // Bind the drawable before play() so the vout is created against the
-        // persistent host view. Safe on prewarmed players too — they never
-        // played, so no vout exists yet.
-        player.drawable = drawableHost
+        if usesMemoryOutput {
+            onActivePlayerWillChange?(player)
+        } else {
+            // Bind the drawable before play() so the vout is created against
+            // the persistent host view. Safe on prewarmed players too — they
+            // never played, so no vout exists yet.
+            player.drawable = drawableHost
+        }
         player.audio?.isMuted = false
         player.play()
         activePlayer = player
         activeChannel = channel
         applyAudioDelay(to: player)
+        subtitleTracks = []
+        audioTracks = []
+        currentSubtitleTrackID = -1
+        currentAudioTrackID = -1
+        if captionsPreferred { scheduleCaptionReapply(for: player) }
+    }
+
+    // MARK: - Tracks
+
+    /// Re-read the active player's audio and subtitle track lists.
+    func refreshTracks() {
+        guard let player = activePlayer else {
+            subtitleTracks = []
+            audioTracks = []
+            return
+        }
+        subtitleTracks = Self.tracks(indexes: player.videoSubTitlesIndexes, names: player.videoSubTitlesNames)
+        audioTracks = Self.tracks(indexes: player.audioTrackIndexes, names: player.audioTrackNames)
+        currentSubtitleTrackID = Int(player.currentVideoSubTitleIndex)
+        currentAudioTrackID = Int(player.currentAudioTrackIndex)
+    }
+
+    func selectSubtitleTrack(_ id: Int) {
+        guard let player = activePlayer else { return }
+        player.currentVideoSubTitleIndex = Int32(id)
+        currentSubtitleTrackID = id
+        captionsPreferred = id >= 0
+    }
+
+    func selectAudioTrack(_ id: Int) {
+        guard let player = activePlayer else { return }
+        player.currentAudioTrackIndex = Int32(id)
+        currentAudioTrackID = id
+    }
+
+    /// Captions on/off toggle for the overlay chip: on picks the first real
+    /// subtitle track, off selects libVLC's `-1` "Disable" entry.
+    func toggleCaptions() {
+        refreshTracks()
+        if currentSubtitleTrackID >= 0 {
+            selectSubtitleTrack(-1)
+        } else if let first = subtitleTracks.first(where: { $0.id >= 0 }) {
+            selectSubtitleTrack(first.id)
+        } else {
+            // No track yet (stream still buffering). Remember the intent so
+            // it applies once the demuxer has found the caption track.
+            captionsPreferred = true
+            scheduleCaptionReapply(for: activePlayer)
+        }
+    }
+
+    var captionsOn: Bool { currentSubtitleTrackID >= 0 }
+
+    private var captionReapplyTask: Task<Void, Never>?
+
+    /// Subtitle tracks appear a few seconds into playback. Poll briefly after
+    /// a tune (or a toggle on a still-buffering stream) and enable the first
+    /// one found. Bounded so it can't spin forever on a stream with none.
+    private func scheduleCaptionReapply(for player: VLCMediaPlayer?) {
+        captionReapplyTask?.cancel()
+        guard let player else { return }
+        captionReapplyTask = Task { @MainActor [weak self] in
+            for _ in 0..<12 {
+                try? await Task.sleep(for: .milliseconds(750))
+                guard let self, !Task.isCancelled, self.activePlayer === player, self.captionsPreferred else { return }
+                self.refreshTracks()
+                if let first = self.subtitleTracks.first(where: { $0.id >= 0 }) {
+                    if self.currentSubtitleTrackID < 0 {
+                        player.currentVideoSubTitleIndex = Int32(first.id)
+                        self.currentSubtitleTrackID = first.id
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    private static func tracks(indexes: [Any]?, names: [Any]?) -> [MediaTrack] {
+        guard let indexes, let names, indexes.count == names.count else { return [] }
+        return zip(indexes, names).compactMap { pair in
+            guard let idx = (pair.0 as? NSNumber)?.intValue else { return nil }
+            let name = (pair.1 as? String) ?? "Track \(idx)"
+            return MediaTrack(id: idx, name: name)
+        }
     }
 
     /// Refresh the prewarmed pool for a list of neighbor channels (typically the
@@ -147,6 +273,10 @@ final class PlayerCoordinator {
         activePlayer?.media = nil
         activePlayer = nil
         activeChannel = nil
+        onActivePlayerWillChange?(nil)
+        captionReapplyTask?.cancel()
+        subtitleTracks = []
+        audioTracks = []
         for (_, p) in prewarmed {
             p.stop()
             p.media = nil
@@ -175,6 +305,17 @@ final class PlayerCoordinator {
         media.addOptions(options)
         let player = VLCMediaPlayer()
         player.media = media
+        // Explicit rather than VLC's "auto": auto picks the "x" filter, which
+        // profiles at ~40% of app CPU on 1080i. "linear" is a cheap
+        // line-doubler that looks fine at phone/tablet sizes.
+        var filter = deinterlaceFilter
+        #if DEBUG
+        // A/B hook for on-device profiling (LUCENT_DEINTERLACE=x|linear|off).
+        if let override = ProcessInfo.processInfo.environment["LUCENT_DEINTERLACE"] {
+            filter = override == "off" ? nil : override
+        }
+        #endif
+        player.setDeinterlaceFilter(filter)
         return player
     }
 }

@@ -113,7 +113,9 @@ public enum DemoContent {
                         // they stop meaning anything.
                         isNew: !show.episodes.isEmpty && airing % 3 == 0,
                         isLive: show.isLive,
-                        rating: show.rating
+                        rating: show.rating,
+                        year: show.year,
+                        credits: show.credits
                     )
                 )
 
@@ -156,6 +158,9 @@ public enum DemoContent {
         var episodes: [String] = []
         var rating: String?
         var isLive: Bool = false
+        var year: Int? = nil
+        /// Fictional cast and crew, so the detail screen has something to show.
+        var credits: [String] = []
     }
 
     struct ChannelSpec {
@@ -186,7 +191,7 @@ public enum DemoContent {
             Show(title: "Kettle & Crumb", desc: "Bakers compete under a countdown clock and a very literal judge.", category: "Reality", minutes: 60, episodes: ["Laminate Week", "Sugar Work", "Bread Week", "The Final Bake"], rating: "TV-G"),
             Show(title: "The Ninth Floor", desc: "A workplace comedy about the only department nobody can shut down.", category: "Comedy", minutes: 30, episodes: ["Budget Freeze", "The Reorg", "Fire Drill", "Offsite", "Performance Review", "The New Hire"], rating: "TV-14"),
             Show(title: "Neighbors of Vale Street", desc: "Two families, one cul-de-sac, and a fence dispute that will not end.", category: "Comedy", minutes: 30, episodes: ["The Survey", "Block Party", "Permit Pending", "Snow Day"], rating: "TV-PG"),
-            Show(title: "Lantern Bay", desc: "A harbor town drama about the people who stayed.", category: "Drama", minutes: 60, episodes: ["Slack Tide", "The Buyer", "Nor'easter", "Salvage Rights", "Closing Day"], rating: "TV-14"),
+            Show(title: "Lantern Bay", desc: "A harbor town drama about the people who stayed.", category: "Drama", minutes: 60, episodes: ["Slack Tide", "The Buyer", "Nor'easter", "Salvage Rights", "Closing Day"], rating: "TV-14", credits: ["Sable Northway", "Corin Ashby", "Femi Larkspur"]),
             Show(title: "Second Serve", desc: "A retired champion takes over a struggling public tennis club.", category: "Drama", minutes: 60, episodes: ["Court Two", "The Wall", "Match Point", "Off Season"], rating: "TV-PG"),
             Show(title: "Aurora Tonight", desc: "Interviews, sketches and live music from the Aurora stage.", category: "Comedy", minutes: 60, episodes: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], rating: "TV-14", isLive: true),
         ]),
@@ -199,10 +204,10 @@ public enum DemoContent {
             Show(title: "Beacon Overtime", desc: "Postgame reaction and the night's best finishes.", category: "Sports", minutes: 60, rating: "TV-G", isLive: true),
         ]),
         ChannelSpec(number: "7.1", name: "Prism Movies", shows: [
-            Show(title: "The Longest Winter", desc: "A snowbound rescue team is forced to choose who they can reach first.", category: "Movie", minutes: 120, rating: "PG-13"),
-            Show(title: "Copper Line", desc: "A telephone lineman stumbles into the biggest story of 1961.", category: "Movie", minutes: 105, rating: "PG"),
+            Show(title: "The Longest Winter", desc: "A snowbound rescue team is forced to choose who they can reach first.", category: "Movie", minutes: 120, rating: "PG-13", year: 2021, credits: ["Ines Marlow", "Teodor Vance", "Priya Sandoval"]),
+            Show(title: "Copper Line", desc: "A telephone lineman stumbles into the biggest story of 1961.", category: "Movie", minutes: 105, rating: "PG", year: 2018, credits: ["Rafael Okonkwo", "Della Hartigan"]),
             Show(title: "Paper Moonlight", desc: "Two strangers spend one night trying to return a suitcase full of letters.", category: "Movie", minutes: 105, rating: "PG"),
-            Show(title: "Undertow County", desc: "A sheriff's investigation of a drowning unravels a company town.", category: "Movie", minutes: 135, rating: "R"),
+            Show(title: "Undertow County", desc: "A sheriff's investigation of a drowning unravels a company town.", category: "Movie", minutes: 135, rating: "R", year: 2023, credits: ["Maren Quill", "Josiah Bellweather", "Anouk Ferris"]),
             Show(title: "Glasshouse", desc: "An architect's award-winning building starts telling on its owners.", category: "Movie", minutes: 120, rating: "PG-13"),
             Show(title: "The Understudy", desc: "A backstage comedy about the only person who knows every line.", category: "Movie", minutes: 105, rating: "PG-13"),
         ]),
@@ -230,8 +235,8 @@ public enum DemoContent {
             Show(title: "Table Talk", desc: "Long-form conversation with a writer, a builder and a cook.", category: "Documentary", minutes: 60, episodes: ["The Archivist", "The Boatwright", "The Baker", "The Cartographer"], rating: "TV-G"),
         ]),
         ChannelSpec(number: "20.1", name: "Solstice Classics", shows: [
-            Show(title: "Night Train to Ellery", desc: "1949. A conductor, a stolen ledger and eleven stops until dawn.", category: "Movie", minutes: 120, rating: "TV-PG"),
-            Show(title: "The Bright Hotel", desc: "A postwar romance set entirely in a hotel lobby.", category: "Movie", minutes: 120, rating: "TV-G"),
+            Show(title: "Night Train to Ellery", desc: "1949. A conductor, a stolen ledger and eleven stops until dawn.", category: "Movie", minutes: 120, rating: "TV-PG", year: 1949, credits: ["Hollis Crane", "Vivian Marsh", "Edmund Pell"]),
+            Show(title: "The Bright Hotel", desc: "A postwar romance set entirely in a hotel lobby.", category: "Movie", minutes: 120, rating: "TV-G", year: 1952, credits: ["Lorna Whitfield", "Casimir Dunne"]),
             Show(title: "Wire and Water", desc: "Engineers race a flood to finish a dam in 1936.", category: "Movie", minutes: 120, rating: "TV-PG"),
             Show(title: "Six Feet of Rope", desc: "A western about a sheriff who refuses to hold a hanging.", category: "Movie", minutes: 120, rating: "TV-PG"),
         ]),

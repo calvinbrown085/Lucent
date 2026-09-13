@@ -18,6 +18,43 @@ public struct HDHRLineupEntry: Codable, Sendable, Hashable {
     public let AudioCodec: String?
 }
 
+/// One entry of the HDHomeRun `/status.json` array. Keys match the firmware's
+/// JSON verbatim. Everything but `Resource` is optional: an idle tuner reports
+/// only its name, and older firmware omits some fields entirely.
+public struct HDHRTunerStatus: Codable, Sendable, Hashable {
+    public let Resource: String
+    public let VctNumber: String?
+    public let VctName: String?
+    public let Frequency: Int?
+    public let SignalStrengthPercent: Int?
+    public let SignalQualityPercent: Int?
+    public let SymbolQualityPercent: Int?
+    public let NetworkRate: Int?
+    public let TargetIP: String?
+
+    public init(
+        Resource: String,
+        VctNumber: String? = nil,
+        VctName: String? = nil,
+        Frequency: Int? = nil,
+        SignalStrengthPercent: Int? = nil,
+        SignalQualityPercent: Int? = nil,
+        SymbolQualityPercent: Int? = nil,
+        NetworkRate: Int? = nil,
+        TargetIP: String? = nil
+    ) {
+        self.Resource = Resource
+        self.VctNumber = VctNumber
+        self.VctName = VctName
+        self.Frequency = Frequency
+        self.SignalStrengthPercent = SignalStrengthPercent
+        self.SignalQualityPercent = SignalQualityPercent
+        self.SymbolQualityPercent = SymbolQualityPercent
+        self.NetworkRate = NetworkRate
+        self.TargetIP = TargetIP
+    }
+}
+
 public enum HDHRClientError: Error, Sendable {
     case invalidIP(String)
     case invalidResponse
@@ -40,6 +77,12 @@ public actor HDHRClient {
 
     public func lineup() async throws -> [HDHRLineupEntry] {
         let url = try makeURL(path: "lineup.json")
+        return try await fetchJSON(url)
+    }
+
+    /// Per-tuner signal and lock status from `/status.json`.
+    public func tunerStatus() async throws -> [HDHRTunerStatus] {
+        let url = try makeURL(path: "status.json")
         return try await fetchJSON(url)
     }
 

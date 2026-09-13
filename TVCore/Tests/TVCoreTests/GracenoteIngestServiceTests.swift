@@ -43,6 +43,8 @@ import Testing
         let movie = try #require(programs.first { $0.title == "Movie Night" })
         #expect(movie.desc == "A long-form description.")
         #expect(movie.categories == ["Movie", "Drama"])
+        #expect(movie.year == 2024)
+        #expect(news.year == nil)
     }
 
     @Test

@@ -88,6 +88,11 @@ private final class SAXDelegate: NSObject, XMLParserDelegate, @unchecked Sendabl
         var isNew: Bool = false
         var isLive: Bool = false
         var rating: String?
+        var year: Int?
+        var credits: [String] = []
+        /// True once an `<episode-num system="onscreen">` has been captured;
+        /// other numbering systems (xmltv_ns, dd_progid) must not overwrite it.
+        var hasOnscreenEpisodeNumber = false
 
         func build() -> Program {
             Program(
@@ -102,7 +107,9 @@ private final class SAXDelegate: NSObject, XMLParserDelegate, @unchecked Sendabl
                 episodeNumber: episodeNumber,
                 isNew: isNew,
                 isLive: isLive,
-                rating: rating
+                rating: rating,
+                year: year,
+                credits: credits
             )
         }
     }
@@ -110,6 +117,7 @@ private final class SAXDelegate: NSObject, XMLParserDelegate, @unchecked Sendabl
     private var state: State = .idle
     private var characterBuffer: String = ""
     private var collectingForTag: String?
+    private var episodeNumSystem: String?
 
     private static let dateFormatter: DateFormatter = {
         let df = DateFormatter()
@@ -159,7 +167,12 @@ private final class SAXDelegate: NSObject, XMLParserDelegate, @unchecked Sendabl
                 return
             }
             state = .program(builder: ProgramBuilder(channelXmltvID: channelID, start: start, stop: stop))
-        case "display-name", "title", "sub-title", "desc", "category", "episode-num":
+        case "display-name", "title", "sub-title", "desc", "category", "date",
+             "actor", "director", "presenter":
+            collectingForTag = elementName
+            characterBuffer = ""
+        case "episode-num":
+            episodeNumSystem = attributeDict["system"]?.lowercased()
             collectingForTag = elementName
             characterBuffer = ""
         case "new":
@@ -220,8 +233,30 @@ private final class SAXDelegate: NSObject, XMLParserDelegate, @unchecked Sendabl
                 state = .program(builder: builder)
             }
         case "episode-num":
+            if case .program(var builder) = state, !trimmed.isEmpty {
+                let isOnscreen = episodeNumSystem == "onscreen"
+                // Prefer the human-readable onscreen form ("S02E05"); fall back
+                // to whichever other system the file offers.
+                if isOnscreen || !builder.hasOnscreenEpisodeNumber {
+                    builder.episodeNumber = trimmed
+                    if isOnscreen { builder.hasOnscreenEpisodeNumber = true }
+                }
+                state = .program(builder: builder)
+            }
+            episodeNumSystem = nil
+        case "date":
+            // XMLTV <date> is YYYY, YYYYMMDD or a full timestamp; the year is
+            // the leading four digits.
             if case .program(var builder) = state {
-                builder.episodeNumber = trimmed.isEmpty ? nil : trimmed
+                let digits = trimmed.prefix(4)
+                if digits.count == 4, digits.allSatisfy(\.isNumber), let year = Int(digits) {
+                    builder.year = year
+                }
+                state = .program(builder: builder)
+            }
+        case "actor", "director", "presenter":
+            if case .program(var builder) = state, !trimmed.isEmpty {
+                builder.credits.append(trimmed)
                 state = .program(builder: builder)
             }
         case "value":

@@ -65,6 +65,68 @@ struct XMLTVParserTests {
         #expect(first == second)
     }
 
+    @Test
+    func parsesCreditsDateAndOnscreenEpisodeNumber() async throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <tv>
+          <programme channel="X.com" start="20260308030000 -0500" stop="20260308050000 -0500">
+            <title>Copper Line</title>
+            <credits>
+              <director> Della Hartigan </director>
+              <actor role="Wes">Rafael Okonkwo</actor>
+              <actor>Ines Marlow</actor>
+              <presenter>Teodor Vance</presenter>
+              <writer>Nobody Counted</writer>
+            </credits>
+            <date>20180412</date>
+            <category>Movie</category>
+            <episode-num system="xmltv_ns">1.4.0/1</episode-num>
+            <episode-num system="onscreen">S02E05</episode-num>
+          </programme>
+          <programme channel="X.com" start="20260308050000 -0500" stop="20260308060000 -0500">
+            <title>Later</title>
+            <date>1999</date>
+            <episode-num system="onscreen">S01E01</episode-num>
+            <episode-num system="xmltv_ns">0.0.0/1</episode-num>
+          </programme>
+          <programme channel="X.com" start="20260308060000 -0500" stop="20260308070000 -0500">
+            <title>Undated</title>
+            <date>n/a</date>
+            <episode-num system="dd_progid">EP01.0001</episode-num>
+          </programme>
+        </tv>
+        """
+        var programs: [Program] = []
+        for try await event in XMLTVParser().parse(data: Data(xml.utf8)) {
+            if case .program(let p) = event { programs.append(p) }
+        }
+        #expect(programs.count == 3)
+
+        let movie = try #require(programs.first { $0.title == "Copper Line" })
+        #expect(movie.credits == ["Della Hartigan", "Rafael Okonkwo", "Ines Marlow", "Teodor Vance"])
+        #expect(movie.year == 2018)
+        #expect(movie.episodeNumber == "S02E05")
+        #expect(movie.categories == ["Movie"])
+
+        // Onscreen wins regardless of document order.
+        let later = try #require(programs.first { $0.title == "Later" })
+        #expect(later.year == 1999)
+        #expect(later.episodeNumber == "S01E01")
+        #expect(later.credits.isEmpty)
+
+        // No onscreen form: fall back to whatever system is present.
+        let undated = try #require(programs.first { $0.title == "Undated" })
+        #expect(undated.year == nil)
+        #expect(undated.episodeNumber == "EP01.0001")
+    }
+
+    @Test
+    func fixtureProgramsHaveNoCreditsOrYear() async throws {
+        let programs = try await collectPrograms()
+        #expect(programs.allSatisfy { $0.credits.isEmpty && $0.year == nil })
+    }
+
     // MARK: helpers
 
     private func collectPrograms() async throws -> [Program] {

@@ -227,6 +227,7 @@ public actor GracenoteIngestService {
         let isNew = flags.contains("new")
         let isLive = flags.contains("live")
         let rating = event.rating?.nilIfEmpty
+        let year = event.program?.releaseYear?.trimmingCharacters(in: .whitespaces).nilIfEmpty.flatMap(Int.init)
 
         let episodeNumber = formatEpisodeNumber(season: event.program?.season, episode: event.program?.episode)
         let stableID = event.programId ?? event.program?.id ?? "\(channelXmltvID):\(Int64(start.timeIntervalSince1970))"
@@ -243,7 +244,8 @@ public actor GracenoteIngestService {
             episodeNumber: episodeNumber,
             isNew: isNew,
             isLive: isLive,
-            rating: rating
+            rating: rating,
+            year: year
         )
     }
 

@@ -73,6 +73,8 @@ import Foundation
         #expect(programs.contains { $0.isNew })
         #expect(programs.contains { $0.isLive })
         #expect(programs.contains { $0.episodeNumber != nil })
+        #expect(programs.contains { $0.year != nil })
+        #expect(programs.contains { $0.credits.count >= 2 })
     }
 
     @Test

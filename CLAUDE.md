@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `@Observable` (Observation framework), not `ObservableObject`
 
 ### v1 scope is locked tight
-HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / Top Shelf. Don't propose adding these. **PiP is also out**: an iOS sample-buffer-pump implementation existed but was removed ("Remove pip for now" — `PIPController`, `PIPFrameSource`, `VLCVideoMemoryBridge` are gone and the bridging header is now empty); don't resurrect it without being asked.
+HDHR-only. **No** DVR / recordings / series passes / remote streaming / auth / SSDP / Top Shelf. Don't propose adding these. Live-TV pause/rewind (time-shift) is filed for a later build — see memory. **PiP (iOS / iPadOS) is back in** as of 2026-09-12, see "Picture in Picture" below; it is never available on tvOS.
 
 ### Liquid Glass usage rule
 Liquid Glass goes on the **navigation layer only** (tab bar, `NowPlayingView` overlay chips, Settings sheet buttons). **Never** on content (channel cards, EPG cells, video). Don't wrap `VLCPlayerView` in a `UIVisualEffectView` — VLC draws into a `CAEAGLLayer`/`CAMetalLayer` and you'll get black squares. Glass overlays must be sibling SwiftUI layers.
@@ -50,6 +50,8 @@ Lucent/                           — repo root
 ```
 
 CI: `.github/workflows/swift.yml` runs `swift build` / `swift test` on macos-latest for pushes/PRs to main.
+
+TestFlight: `scripts/testflight.sh [tvos|ios|all] [--build N] [--no-upload] [--dry-run]` archives with `generic/platform=…`, exports with method `app-store-connect` and `destination upload`. Auth via `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_KEY_PATH` (App Store Connect API key) or, if unset, the Apple ID signed into Xcode. Build number defaults to a UTC `yyyyMMddHHmm` timestamp so it always increases. Logs land in `build/testflight/`.
 
 The Xcode project uses `PBXFileSystemSynchronizedRootGroup` for `Lucent/Lucent/`, so **new Swift files under that folder are automatically target members — no pbxproj edits needed for source files**. Swift package products and frameworks still need explicit pbxproj entries.
 
@@ -157,9 +159,27 @@ A/V sync is handled at runtime, not via `audio-desync`: `AudioLatencyMonitor` tr
 
 **Drawable invariant**: libVLC's iOS/tvOS vout binds to `player.drawable` when the video output is created and never re-reads it — reassigning `drawable` on a playing player leaves video rendering in the old view (audio plays, screen black). All players render into the single persistent `PlayerCoordinator.drawableHost` UIView (bound before `play()`), and `VLCPlayerView` moves video between screens (hero preview ⇄ fullscreen) by reparenting that host view. Never set `drawable` on a live player.
 
+### Search, rails, reminders, docked player
+
+- **Search tab** (`Views/SearchView.swift`) runs `EPGStore.search` over an FTS5 external-content table (`program_fts`, migration `v4_program_fts`, kept in sync by triggers). User input is sanitised into `"term"*` prefix tokens, so odd input never throws.
+- **On Now / Up Next rails** on `ChannelGridView` use `nowPlayingBatch` + `upNextBatch` for favorites (first 12 visible channels if none are starred).
+- **Guide chrome**: `GuideJumpTarget` chips (Now / Tonight / Tomorrow / Weekend) and a `GuideGenreFilter` menu that runs one `programs(inCategoryContaining:)` query per window and filters rows. on tvOS `onMoveCommand` fires *in addition to* the focus engine's own move, so `moveFocusHorizontally` acts only at the window edges (clipped cell or off-screen neighbour) and lets the engine handle in-row moves — doing both double-steps; every row always has a focusable cell (`GuideEmptyRowCell`) so vertical focus never gets stuck.
+- **Reminders** (`Reminders/ReminderService.swift`) — **parked behind `FeatureFlags.reminders = false`** (`FeatureFlags.swift`); the code stays, the UI, banner, notification delegate and ticker are all gated. Persisted in UserDefaults, 5-minute lead. In-app banner (`ReminderBanner`, mounted in `RootView`) on both platforms; iOS also schedules `UNCalendarNotificationTrigger`s and `AppDelegate` routes taps to `AppModel.watch(channelID:)`. `lucent://tune/<channelID>` and `lucent://tune?number=8.1` deep links do the same.
+- **Now Playing chips**: captions / audio-track pickers (`PlayerCoordinator.refreshTracks`, libVLC track indexes, `-1` = off), signal meter (`HDHRClient.tunerStatus` → `/status.json`, polled every 2 s while the overlay is up), direct channel entry (`ChannelNumberPad`, also fed by hardware-keyboard digits), and a last-channel toggle (Play/Pause on tvOS, recents kept in `SettingsStore.recentChannelIDs`).
+- **iPad docked player**: `LayoutMetrics.supportsDockedPlayer` + `SettingsStore.dockedPlayerEnabled` make tunes land in `DockedPlayerPane` (a sibling column in `RootView`) instead of fullscreen. `AppModel.isFullscreenPresented` / `dockedPlayerVisible` guarantee only one `VLCPlayerView` is mounted at a time (drawable invariant). The guide hero hides its live preview while the dock is visible.
+- `Program` carries `year` and `credits` (migration `v3_program_metadata`); XMLTV `<credits>`/`<date>` and Gracenote `releaseYear` feed them. `ProgramDetailView` shows them plus "Also airing" via `EPGStore.airings(ofTitle:)`.
+
+### Backgrounding
+
+`RootView` forwards `scenePhase` to `AppModel.sceneDidEnterBackground` / `sceneDidBecomeActive`. tvOS tears the player down immediately (no PiP exists, so audio under the home screen is a bug); iOS waits 1.5 s and tears down only if system PiP didn't take the stream. The stopped channel is remembered and re-tuned on return **only** if a player surface (fullscreen, dock, pending presentation) is still up.
+
+### Picture in Picture (iOS / iPadOS only)
+
+`SettingsStore.pipEnabled` (default on) sets `PlayerCoordinator.usesMemoryOutput`. When on, `tune` does **not** set `drawable`; instead `onActivePlayerWillChange` fires before `play()` and `PIPController.attachVLCSource` installs libVLC memory callbacks (`Player/VLCVideoMemoryBridge.{h,m}`, imported via the bridging header; libVLC C symbols are forward-declared because the headers are excluded from MobileVLCKit's modulemap). `PIPFrameSource` asks VLC for NV12, copies each frame into a pooled `CVPixelBuffer`, wraps it as a `CMSampleBuffer` and enqueues it into every registered `AVSampleBufferDisplayLayer` — `VLCPlayerView` mounts a `SampleBufferDisplayView` per screen (fullscreen, hero tile, iPad dock), so several can show the same stream. The most recently mounted layer is bound to `AVPictureInPictureController`; `canStartPictureInPictureAutomaticallyFromInline` starts PiP on backgrounding. `Info.plist` carries `UIBackgroundModes = audio` (App Store Connect rejects a `picture-in-picture` entry; PiP needs only audio). With PiP off, or on tvOS, the drawable-host path above is used unchanged. Toggling the setting retunes the active channel so the path switches immediately. The Swift 6.2.3 frontend crashes on the `async` form of `pictureInPictureController(_:skipByInterval:)`; keep the completion-handler form.
+
 ### Adaptive layout (iOS/iPadOS vs tvOS)
 
-`LayoutMetrics` (`Views/LayoutMetrics.swift`) holds per-platform/size-class layout constants, resolved once in `RootView` and injected via `@Environment(\.layoutMetrics)` — views read metrics from the environment instead of querying `horizontalSizeClass` themselves. tvOS short-circuits to a fixed 1920×1080 profile. When `metrics.useTimelineGuide` is true (iPhone portrait), `TimelineGuideView` replaces the wall-of-grid `GuideView.gridBody`.
+`LayoutMetrics` (`Views/LayoutMetrics.swift`) holds per-platform/size-class layout constants, resolved once in `RootView` and injected via `@Environment(\.layoutMetrics)` — views read metrics from the environment instead of querying `horizontalSizeClass` themselves. tvOS short-circuits to a fixed 1920×1080 profile. The grid guide is the default on every platform: iPhone uses `guideVisibleSlots = 3` (5 in landscape), `typeScale = 0.62` applied to every fixed point size in `GuideView`, and `compactGuide` (drops the hero art tile, scrolls the chip row). `TimelineGuideView` is an opt-in via `SettingsStore.preferTimelineGuide`, applied in `RootView.resolvedMetrics`.
 
 ## Bundle / project conventions
 

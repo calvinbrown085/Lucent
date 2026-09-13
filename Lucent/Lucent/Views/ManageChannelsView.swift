@@ -12,13 +12,6 @@ struct ManageChannelsView: View {
 
         Form {
             Section {
-                Toggle("Hide channels without guide data", isOn: $settings.hideChannelsWithoutGuide)
-                Text("Channels whose listings haven't loaded (or aren't mapped to your guide source) are excluded from the grid and guide. Use Channel mapping in Settings to fix mismatches.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
                 if appModel.channels.isEmpty {
                     Text("Channels will appear here after a successful connection.")
                         .foregroundStyle(.secondary)

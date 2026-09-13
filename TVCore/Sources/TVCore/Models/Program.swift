@@ -14,6 +14,11 @@ public struct Program: Codable, Hashable, Identifiable, Sendable {
     public let isNew: Bool
     public let isLive: Bool
     public let rating: String?
+    /// Release year, when the source provides one (Gracenote `releaseYear`,
+    /// XMLTV `<date>`). Mostly meaningful for movies.
+    public let year: Int?
+    /// Cast and crew names in display order (actors, directors, presenters).
+    public let credits: [String]
 
     public init(
         id: String,
@@ -27,7 +32,9 @@ public struct Program: Codable, Hashable, Identifiable, Sendable {
         episodeNumber: String? = nil,
         isNew: Bool = false,
         isLive: Bool = false,
-        rating: String? = nil
+        rating: String? = nil,
+        year: Int? = nil,
+        credits: [String] = []
     ) {
         self.id = id
         self.channelXmltvID = channelXmltvID
@@ -41,6 +48,8 @@ public struct Program: Codable, Hashable, Identifiable, Sendable {
         self.isNew = isNew
         self.isLive = isLive
         self.rating = rating
+        self.year = year
+        self.credits = credits
     }
 
     public var duration: TimeInterval { stop.timeIntervalSince(start) }
@@ -62,6 +71,8 @@ extension Program: FetchableRecord, PersistableRecord {
         public static let isNew = Column(CodingKeys.isNew)
         public static let isLive = Column(CodingKeys.isLive)
         public static let rating = Column(CodingKeys.rating)
+        public static let year = Column(CodingKeys.year)
+        public static let credits = Column(CodingKeys.credits)
     }
 
     public func encode(to container: inout PersistenceContainer) {
@@ -72,11 +83,13 @@ extension Program: FetchableRecord, PersistableRecord {
         container[Columns.desc] = desc
         container[Columns.start] = Int64(start.timeIntervalSince1970)
         container[Columns.stop] = Int64(stop.timeIntervalSince1970)
-        container[Columns.categories] = Self.encodeCategories(categories)
+        container[Columns.categories] = Self.encodeStringArray(categories)
         container[Columns.episodeNumber] = episodeNumber
         container[Columns.isNew] = isNew
         container[Columns.isLive] = isLive
         container[Columns.rating] = rating
+        container[Columns.year] = year
+        container[Columns.credits] = Self.encodeStringArray(credits)
     }
 
     public init(row: Row) throws {
@@ -89,14 +102,16 @@ extension Program: FetchableRecord, PersistableRecord {
         let stopEpoch: Int64 = row[Columns.stop]
         self.start = Date(timeIntervalSince1970: TimeInterval(startEpoch))
         self.stop = Date(timeIntervalSince1970: TimeInterval(stopEpoch))
-        self.categories = Self.decodeCategories(row[Columns.categories])
+        self.categories = Self.decodeStringArray(row[Columns.categories])
         self.episodeNumber = row[Columns.episodeNumber]
         self.isNew = row[Columns.isNew]
         self.isLive = row[Columns.isLive]
         self.rating = row[Columns.rating]
+        self.year = row[Columns.year]
+        self.credits = Self.decodeStringArray(row[Columns.credits])
     }
 
-    private static func encodeCategories(_ categories: [String]) -> String {
+    private static func encodeStringArray(_ categories: [String]) -> String {
         guard let data = try? JSONEncoder().encode(categories),
               let json = String(data: data, encoding: .utf8) else {
             return "[]"
@@ -104,7 +119,7 @@ extension Program: FetchableRecord, PersistableRecord {
         return json
     }
 
-    private static func decodeCategories(_ json: String?) -> [String] {
+    private static func decodeStringArray(_ json: String?) -> [String] {
         guard let json, let data = json.data(using: .utf8),
               let categories = try? JSONDecoder().decode([String].self, from: data) else {
             return []

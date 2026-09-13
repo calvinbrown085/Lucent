@@ -11,6 +11,32 @@ final class AppModel {
     let sleepTimer = SleepTimer()
     let favoritesSync: FavoritesCloudSync
     let audioMonitor = AudioLatencyMonitor()
+    let reminders = ReminderService()
+    #if !os(tvOS)
+    let pip = PIPController()
+    #endif
+
+    /// A channel some out-of-band path (reminder banner, notification tap,
+    /// deep link, docked-player expand) wants to watch fullscreen. `RootView`
+    /// presents Now Playing for it and clears it on dismiss.
+    var pendingTuneChannel: Channel?
+
+    /// Set by `RootView` when the current layout has room for the docked
+    /// player (iPad regular width). `NowPlayingView` flips
+    /// `isFullscreenPresented` while it's on screen so the dock and the
+    /// fullscreen view never both mount `VLCPlayerView` at once.
+    var dockedPlayerLayout = false
+    var isFullscreenPresented = false
+
+    /// True when a tune should land in the docked pane rather than open
+    /// Now Playing fullscreen.
+    var prefersDockedPlayback: Bool {
+        dockedPlayerLayout && settings.dockedPlayerEnabled
+    }
+
+    var dockedPlayerVisible: Bool {
+        prefersDockedPlayback && player.activeChannel != nil && !isFullscreenPresented
+    }
 
     /// Set true when the sleep timer fires `onExpire` — NowPlayingView observes
     /// this to dismiss itself, then resets the flag.
@@ -51,6 +77,9 @@ final class AppModel {
         )
         sleepTimer.onExpire = { [weak self] in
             guard let self else { return }
+            #if !os(tvOS)
+            self.pip.stop()
+            #endif
             self.player.tearDown()
             self.sleepTimerDidExpire = true
         }
@@ -65,7 +94,50 @@ final class AppModel {
             self?.player.applyAudioDelayToAllPlayers(micros)
         }
         audioMonitor.start()
+        player.captionsPreferred = settings.captionsEnabled
+        player.deinterlaceFilter = settings.deinterlaceMode.vlcFilterName
+        if FeatureFlags.reminders { reminders.start() }
+        #if !os(tvOS)
+        player.usesMemoryOutput = settings.pipEnabled
+        pip.onShouldTearDownPlayer = { [weak self] in
+            self?.player.tearDown()
+        }
+        pip.onRestoreUserInterface = { [weak self] in
+            guard let self, !self.isFullscreenPresented, !self.dockedPlayerVisible,
+                  let ch = self.player.activeChannel else { return }
+            self.pendingTuneChannel = ch
+        }
+        // Install libVLC's memory callbacks on whichever player is about to
+        // play. Must fire before its first play() — see PlayerCoordinator.
+        player.onActivePlayerWillChange = { [weak self] newPlayer in
+            self?.pip.attachVLCSource(newPlayer)
+        }
+        #endif
     }
+
+    /// Deinterlacer change applies to new players; retune so it's immediate.
+    func setDeinterlaceMode(_ mode: DeinterlaceMode) {
+        settings.deinterlaceMode = mode
+        player.deinterlaceFilter = mode.vlcFilterName
+        if let active = player.activeChannel {
+            player.tearDown()
+            tune(to: active)
+        }
+    }
+
+    #if !os(tvOS)
+    /// Flip the rendering path. Takes effect on the next tune; if something
+    /// is playing, retune it now so the change is immediate.
+    func setPiPEnabled(_ enabled: Bool) {
+        settings.pipEnabled = enabled
+        if pip.isActive { pip.stop() }
+        player.usesMemoryOutput = enabled
+        if let active = player.activeChannel {
+            player.tearDown()
+            tune(to: active)
+        }
+    }
+    #endif
 
     /// Discover the configured HDHR, build the channel list with overrides applied,
     /// and kick off an XMLTV refresh in the background.
@@ -130,6 +202,22 @@ final class AppModel {
             bootstrapError = String(describing: error)
         }
 
+        if let pending = pendingWatchChannelID {
+            pendingWatchChannelID = nil
+            watch(channelID: pending)
+        }
+        if let number = pendingWatchNumber {
+            pendingWatchNumber = nil
+            watch(number: number)
+        }
+        #if DEBUG
+        // Profiling hook: `xctrace record --launch --env LUCENT_AUTOWATCH=8.1`
+        // starts the app under Instruments and lands straight on a stream.
+        // Empty value resumes the last-watched channel.
+        if pendingWatchNumber == nil, let auto = ProcessInfo.processInfo.environment["LUCENT_AUTOWATCH"] {
+            watch(number: auto)
+        }
+        #endif
         await refreshGuide()
     }
 
@@ -381,8 +469,187 @@ final class AppModel {
 
     func tune(to channel: Channel) {
         player.isDemoMode = isDemoMode
+        player.captionsPreferred = settings.captionsEnabled
         player.tune(to: channel)
         updatePrewarmNeighbors(for: channel)
+        settings.recordRecent(channel.id)
+    }
+
+    func tune(toChannelID id: String) {
+        guard let ch = channels.first(where: { $0.id == id }) else { return }
+        tune(to: ch)
+    }
+
+    /// The channel watched before the active one, for the "last channel"
+    /// toggle. Recents are newest-first with the active channel at index 0.
+    var previousChannel: Channel? {
+        let ids = settings.recentChannelIDs
+        let candidates = ids.filter { $0 != player.activeChannel?.id }
+        guard let id = candidates.first else { return nil }
+        return channels.first { $0.id == id }
+    }
+
+    func tuneToPreviousChannel() {
+        guard let prev = previousChannel else { return }
+        tune(to: prev)
+    }
+
+    /// Recently watched channels (newest first), excluding hidden ones.
+    var recentChannels: [Channel] {
+        let visible = visibleChannels
+        return settings.recentChannelIDs.compactMap { id in visible.first { $0.id == id } }
+    }
+
+    /// Persisted captions preference + live apply.
+    func toggleCaptions() {
+        player.toggleCaptions()
+        settings.captionsEnabled = player.captionsPreferred
+    }
+
+    /// A watch request that arrived before the lineup loaded (cold-launch
+    /// notification tap or deep link). Resolved at the end of `bootstrap`.
+    private var pendingWatchChannelID: String?
+
+    /// Watch a channel from wherever the app currently is: fullscreen, or
+    /// into the docked pane on iPad when that's the user's preference.
+    func watch(channelID: String) {
+        guard let ch = channels.first(where: { $0.id == channelID }) else {
+            if channels.isEmpty { pendingWatchChannelID = channelID }
+            return
+        }
+        tune(to: ch)
+        if !prefersDockedPlayback {
+            pendingTuneChannel = ch
+        }
+    }
+
+    /// `lucent://tune/<channelID>`, `lucent://tune?number=8.1`, or bare
+    /// `lucent://tune` (resume the last-watched channel, else the first).
+    /// Any of these arriving before the lineup has loaded is deferred to the
+    /// end of `bootstrap`.
+    func handle(url: URL) {
+        guard url.scheme?.lowercased() == "lucent", url.host?.lowercased() == "tune" else { return }
+        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if !path.isEmpty {
+            watch(channelID: path.removingPercentEncoding ?? path)
+            return
+        }
+        let number = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first(where: { $0.name == "number" })?.value
+        guard !channels.isEmpty else {
+            pendingWatchNumber = number ?? ""
+            return
+        }
+        watch(number: number)
+    }
+
+    /// Empty string means "resume last watched / first channel".
+    private var pendingWatchNumber: String?
+
+    private func watch(number: String?) {
+        let target: Channel?
+        if let number, !number.isEmpty {
+            target = channels.first { $0.guideNumber == number }
+        } else {
+            target = recentChannels.first ?? visibleChannels.first ?? channels.first
+        }
+        if let target { watch(channelID: target.id) }
+    }
+
+    // MARK: - Scene lifecycle
+
+    /// Channel stopped by `sceneDidEnterBackground`, resumed on return.
+    private var channelToResume: Channel?
+    private var backgroundStopTask: Task<Void, Never>?
+
+    /// Leaving the foreground ends playback: tvOS has no PiP, so audio
+    /// carrying on under the home screen is never wanted. On iOS the stop
+    /// is deferred briefly so system PiP gets the chance to take the stream
+    /// over; if it doesn't (PiP off, or not possible yet), we stop too.
+    func sceneDidEnterBackground() {
+        backgroundStopTask?.cancel()
+        #if os(tvOS)
+        stopForBackground()
+        #else
+        backgroundStopTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1500))
+            guard let self, !Task.isCancelled else { return }
+            if !self.pip.isActive { self.stopForBackground() }
+        }
+        #endif
+    }
+
+    func sceneDidBecomeActive() {
+        backgroundStopTask?.cancel()
+        guard let ch = channelToResume else { return }
+        channelToResume = nil
+        // Only resume if a player surface is still up; otherwise the user
+        // had left playback and we shouldn't grab a tuner unprompted.
+        if isFullscreenPresented || dockedPlayerVisible || pendingTuneChannel != nil {
+            tune(to: ch)
+        }
+    }
+
+    private func stopForBackground() {
+        guard let ch = player.activeChannel else { return }
+        channelToResume = ch
+        player.tearDown()
+    }
+
+    // MARK: - Tuner status
+
+    /// Per-tuner signal readings from the HDHR (`/status.json`). Demo mode
+    /// synthesises a healthy-looking reading so the overlay can be reviewed.
+    func tunerStatus() async -> [HDHRTunerStatus] {
+        if isDemoMode {
+            let n = player.activeChannel?.guideNumber ?? "1.1"
+            let wobble = Int(Date.now.timeIntervalSince1970) % 5
+            return [HDHRTunerStatus(
+                Resource: "tuner0", VctNumber: n, VctName: player.activeChannel?.guideName,
+                Frequency: 189_000_000, SignalStrengthPercent: 88 + wobble,
+                SignalQualityPercent: 84 + wobble, SymbolQualityPercent: 100,
+                NetworkRate: 9_130_000, TargetIP: nil
+            )]
+        }
+        guard !settings.hdhrIP.isEmpty else { return [] }
+        return (try? await HDHRClient(host: settings.hdhrIP).tunerStatus()) ?? []
+    }
+
+    /// The tuner currently carrying the active channel, if the HDHR reports one.
+    func activeTunerStatus() async -> HDHRTunerStatus? {
+        let all = await tunerStatus()
+        guard let number = player.activeChannel?.guideNumber else { return all.first }
+        return all.first { $0.VctNumber == number } ?? all.first { ($0.SignalStrengthPercent ?? 0) > 0 }
+    }
+
+    // MARK: - Guide queries for the new screens
+
+    func search(_ query: String) async throws -> [Program] {
+        try await epgStore.search(query, from: .now, limit: 150)
+    }
+
+    func airings(of program: Program) async throws -> [Program] {
+        try await epgStore.airings(
+            ofTitle: program.title, excludingID: program.id,
+            from: .now, to: .now.addingTimeInterval(7 * 24 * 3600)
+        )
+    }
+
+    func upNextBatch(for channels: [Channel], at instant: Date = .now) async throws -> [String: Program] {
+        let byXmltv = try await epgStore.upNextBatch(channelXmltvIDs: channels.map(\.xmltvID), at: instant)
+        var out: [String: Program] = [:]
+        for c in channels { if let p = byXmltv[c.xmltvID] { out[c.id] = p } }
+        return out
+    }
+
+    func programs(inCategoryContaining needle: String, from: Date, to: Date) async throws -> [Program] {
+        try await epgStore.programs(inCategoryContaining: needle, from: from, to: to)
+    }
+
+    /// Resolve a program row back to the channel it belongs to. Search and
+    /// "also airing" results carry only the xmltvID join key.
+    func channel(forXmltvID id: String) -> Channel? {
+        visibleChannels.first { $0.xmltvID == id } ?? channels.first { $0.xmltvID == id }
     }
 
     func tuneAdjacent(offset: Int) {

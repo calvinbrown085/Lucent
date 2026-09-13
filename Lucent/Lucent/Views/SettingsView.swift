@@ -6,6 +6,17 @@ struct SettingsView: View {
     @State private var testingConnection = false
     @State private var testResult: String?
 
+    /// Tells the user what the toggle will actually do right now, so a
+    /// "why did half my channels vanish" moment is explained in place.
+    private var hideChannelsFooter: String {
+        let total = appModel.channels.count
+        let withListings = appModel.channels.filter { appModel.xmltvIDsWithPrograms.contains($0.xmltvID) }.count
+        guard total > 0 else {
+            return "Channels the guide has no programs for are left out of the grid, guide and up/down switching."
+        }
+        return "\(withListings) of \(total) channels have listings. The rest are left out of the grid, guide and up/down switching while this is on."
+    }
+
     var body: some View {
         @Bindable var settings = appModel.settings
         NavigationStack {
@@ -141,6 +152,20 @@ struct SettingsView: View {
 
                 Section("Playback") {
                     Picker(
+                        "Deinterlacing",
+                        selection: Binding(
+                            get: { settings.deinterlaceMode },
+                            set: { appModel.setDeinterlaceMode($0) }
+                        )
+                    ) {
+                        ForEach(DeinterlaceMode.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("Broadcasts are interlaced. Fast is light on the battery and looks sharp on a phone or tablet; Quality is smoother on a big screen but runs the device much hotter; Off shows combing on motion.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker(
                         "Prewarm channels",
                         selection: Binding(
                             get: { settings.prewarmCount },
@@ -186,7 +211,69 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Section("Captions & layout") {
+                    Toggle("Captions on by default", isOn: Binding(
+                        get: { settings.captionsEnabled },
+                        set: { on in
+                            settings.captionsEnabled = on
+                            appModel.player.captionsPreferred = on
+                        }
+                    ))
+                    Text("Turns on the first caption track (CEA-608/708) of every channel. You can still toggle captions from the player.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    #if !os(tvOS)
+                    Toggle("Picture in Picture", isOn: Binding(
+                        get: { settings.pipEnabled },
+                        set: { appModel.setPiPEnabled($0) }
+                    ))
+                    Text("Keeps the picture in a floating window when you leave the app or tap the PiP button. Turn off if video stutters on older devices.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Docked player on iPad", isOn: $settings.dockedPlayerEnabled)
+                    Text("Keeps the live picture beside the guide while you browse. Off opens every channel fullscreen.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Timeline guide on iPhone", isOn: $settings.preferTimelineGuide)
+                    Text("Shows one channel at a time as a vertical list instead of the grid.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    #endif
+                }
+
+                if FeatureFlags.reminders {
+                Section("Reminders") {
+                    if appModel.reminders.upcoming.isEmpty {
+                        Text("No reminders set. Use “Remind Me” on any upcoming program in the guide.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(appModel.reminders.upcoming) { r in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.title)
+                                Text("\(r.start, format: .dateTime.weekday().hour().minute()) · \(r.channelNumber) \(r.channelName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                appModel.reminders.remove(programID: r.id)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Remove reminder")
+                        }
+                    }
+                }
+                }
+
                 Section("Channels") {
+                    Toggle("Hide channels with no listings", isOn: $settings.hideChannelsWithoutGuide)
+                    Text(hideChannelsFooter)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     NavigationLink {
                         ManageChannelsView()
                     } label: {

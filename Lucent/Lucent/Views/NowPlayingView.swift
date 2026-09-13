@@ -12,6 +12,12 @@ struct NowPlayingView: View {
     @State private var miniGuideOpen = false
     @State private var miniGuideHideTask: Task<Void, Never>?
     @State private var sleepDialogPresented = false
+    @State private var captionsDialogPresented = false
+    @State private var audioDialogPresented = false
+    @State private var numberPadOpen = false
+    @State private var numberEntry = ""
+    @State private var signal: HDHRTunerStatus?
+    @State private var signalTask: Task<Void, Never>?
 
     /// True when the mini-guide should be presented as a modal sheet
     /// (iPhone) rather than as a sibling overlay panel (tvOS / iPad).
@@ -48,7 +54,7 @@ struct NowPlayingView: View {
             LiveVideoLayer(channel: currentChannel, program: nowPlaying)
                 .ignoresSafeArea()
 
-            if overlayVisible {
+            if overlayVisible, !numberPadOpen {
                 overlay
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
@@ -74,10 +80,44 @@ struct NowPlayingView: View {
                     .transition(.opacity)
                     .zIndex(2)
             }
+
+            if numberPadOpen, !miniGuideAsSheet {
+                numberPad
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    .zIndex(3)
+            }
         }
         .contentShape(Rectangle())
+        #if os(tvOS)
+        // With the chips hidden nothing on screen is focusable, so a Select
+        // press would go nowhere. Make the root itself focusable in that
+        // state; the tap handler below then brings the overlay back.
+        .focusable(!overlayVisible && !miniGuideOpen && !numberPadOpen)
+        #endif
         .onAppear {
+            appModel.isFullscreenPresented = true
+            #if !os(tvOS)
+            appModel.pip.inAppVideoMounted = true
+            #endif
             scheduleHide()
+            startSignalPolling()
+        }
+        .onChange(of: overlayVisible) { _, visible in
+            if visible { startSignalPolling() } else { stopSignalPolling() }
+        }
+        #if os(tvOS)
+        // Play/Pause on the Siri Remote is the classic "last channel" key.
+        .onPlayPauseCommand {
+            if numberPadOpen { return }
+            appModel.tuneToPreviousChannel()
+            showOverlay()
+        }
+        #endif
+        // Hardware keyboard / remote keypad digits open direct entry.
+        .onKeyPress(characters: .decimalDigits) { press in
+            numberEntry = numberPadOpen ? numberEntry + press.characters : press.characters
+            openNumberPad()
+            return .handled
         }
         .onChange(of: appModel.player.activeChannel?.id) { _, _ in
             // New channel => refresh overlay info and re-show.
@@ -121,7 +161,18 @@ struct NowPlayingView: View {
             }
         }
         .onDisappear {
-            appModel.player.tearDown()
+            stopSignalPolling()
+            appModel.isFullscreenPresented = false
+            // On iPad the picture drops back into the docked pane instead
+            // of stopping; everywhere else closing Now Playing ends playback —
+            // unless PiP has the stream, in which case PiP's stop tears down.
+            #if !os(tvOS)
+            appModel.pip.inAppVideoMounted = appModel.prefersDockedPlayback
+            if appModel.pip.isActive { return }
+            #endif
+            if !appModel.prefersDockedPlayback {
+                appModel.player.tearDown()
+            }
         }
         #if !os(tvOS)
         .sheet(isPresented: miniGuideSheetBinding) {
@@ -130,7 +181,65 @@ struct NowPlayingView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: Binding(
+            get: { numberPadOpen && miniGuideAsSheet },
+            set: { if !$0 { closeNumberPad() } }
+        )) {
+            numberPad
+                .padding()
+                .presentationDetents([.large])
+        }
         #endif
+    }
+
+    private var numberPad: some View {
+        ChannelNumberPad(
+            entry: $numberEntry,
+            channels: appModel.visibleChannels,
+            onTune: { ch in
+                appModel.tune(to: ch)
+                closeNumberPad()
+                showOverlay()
+            },
+            onClose: { closeNumberPad() }
+        )
+        .frame(maxWidth: 720)
+        #if os(tvOS)
+        .onExitCommand { closeNumberPad() }
+        #endif
+    }
+
+    private func openNumberPad() {
+        hideTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            overlayVisible = true
+            numberPadOpen = true
+        }
+    }
+
+    private func closeNumberPad() {
+        withAnimation(.easeInOut(duration: 0.2)) { numberPadOpen = false }
+        numberEntry = ""
+        showOverlay()
+    }
+
+    // MARK: - Signal
+
+    /// Poll the tuner's signal readings while the overlay is up. Two seconds
+    /// matches the HDHR web UI's own refresh cadence.
+    private func startSignalPolling() {
+        guard signalTask == nil else { return }
+        signalTask = Task { @MainActor in
+            while !Task.isCancelled {
+                signal = await appModel.activeTunerStatus()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func stopSignalPolling() {
+        signalTask?.cancel()
+        signalTask = nil
     }
 
     private var miniGuideOverlayView: some View {
@@ -151,6 +260,7 @@ struct NowPlayingView: View {
             showOverlay()
             return
         }
+        if numberPadOpen { return }
         if miniGuideOpen {
             if direction == .left {
                 closeMiniGuide()
@@ -174,6 +284,10 @@ struct NowPlayingView: View {
     }
 
     private func handleExit() {
+        if numberPadOpen {
+            closeNumberPad()
+            return
+        }
         if miniGuideOpen {
             closeMiniGuide()
             return
@@ -234,18 +348,30 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var overlay: some View {
         VStack {
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 14) {
                 #if !os(tvOS)
                 doneButton
                 #endif
                 channelChip
+                if let prev = appModel.previousChannel {
+                    previousChannelChip(prev)
+                }
                 Spacer()
+                if let signal {
+                    SignalChip(status: signal)
+                }
+                #if !os(tvOS)
+                pipButton
+                #endif
                 favoriteButton
             }
             Spacer()
-            HStack(alignment: .bottom) {
+            HStack(alignment: .bottom, spacing: 14) {
                 programChip
                 Spacer()
+                captionsChip
+                audioChip
+                goToChip
                 sleepChip
             }
         }
@@ -301,6 +427,14 @@ struct NowPlayingView: View {
                 .foregroundStyle(GuideTokens.text)
             if let p = nowPlaying {
                 HStack(spacing: 8) {
+                    if p.isLive {
+                        Text("LIVE")
+                            .font(.caption2.weight(.heavy))
+                            .tracking(0.8)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(GuideTokens.live, in: .capsule)
+                            .foregroundStyle(.white)
+                    }
                     Text(p.start, format: .dateTime.hour().minute())
                     Text("–")
                     Text(p.stop, format: .dateTime.hour().minute())
@@ -312,12 +446,95 @@ struct NowPlayingView: View {
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(GuideTokens.text3)
+                ProgressView(value: progress(of: p))
+                    .tint(GuideTokens.accent)
+                    .frame(maxWidth: 320)
             }
         }
         .frame(maxWidth: 700, alignment: .leading)
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    }
+
+    private func previousChannelChip(_ prev: Channel) -> some View {
+        Button {
+            appModel.tuneToPreviousChannel()
+            showOverlay()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.uturn.backward")
+                Text(prev.guideNumber)
+                    .monospacedDigit()
+            }
+            .font(.headline)
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel("Back to channel \(prev.guideNumber) \(prev.guideName)")
+    }
+
+    private var captionsChip: some View {
+        let on = appModel.player.captionsOn || (appModel.settings.captionsEnabled && appModel.player.subtitleTracks.isEmpty)
+        return Button {
+            appModel.player.refreshTracks()
+            if appModel.player.subtitleTracks.filter({ $0.id >= 0 }).count > 1 {
+                captionsDialogPresented = true
+            } else {
+                appModel.toggleCaptions()
+            }
+            showOverlay()
+        } label: {
+            Image(systemName: on ? "captions.bubble.fill" : "captions.bubble")
+                .font(.headline)
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel(on ? "Captions on" : "Captions off")
+        .confirmationDialog("Captions", isPresented: $captionsDialogPresented, titleVisibility: .visible) {
+            ForEach(appModel.player.subtitleTracks) { track in
+                Button(track.id < 0 ? "Off" : track.name) {
+                    appModel.player.selectSubtitleTrack(track.id)
+                    appModel.settings.captionsEnabled = track.id >= 0
+                    showOverlay()
+                }
+            }
+            Button("Dismiss", role: .cancel) {}
+        }
+    }
+
+    private var audioChip: some View {
+        Button {
+            appModel.player.refreshTracks()
+            audioDialogPresented = true
+            showOverlay()
+        } label: {
+            Image(systemName: "waveform")
+                .font(.headline)
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel("Audio track")
+        .confirmationDialog("Audio", isPresented: $audioDialogPresented, titleVisibility: .visible) {
+            if appModel.player.audioTracks.isEmpty {
+                Button("Only one audio track") {}
+            }
+            ForEach(appModel.player.audioTracks.filter { $0.id >= 0 }) { track in
+                Button(track.id == appModel.player.currentAudioTrackID ? "✓ \(track.name)" : track.name) {
+                    appModel.player.selectAudioTrack(track.id)
+                    showOverlay()
+                }
+            }
+            Button("Dismiss", role: .cancel) {}
+        }
+    }
+
+    private var goToChip: some View {
+        Button {
+            openNumberPad()
+        } label: {
+            Image(systemName: "number")
+                .font(.headline)
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel("Go to channel")
     }
 
     private var sleepChip: some View {
@@ -387,6 +604,27 @@ struct NowPlayingView: View {
         }
         .buttonStyle(.plain)
     }
+
+    #if !os(tvOS)
+    @ViewBuilder
+    private var pipButton: some View {
+        if appModel.pip.isSupported, appModel.settings.pipEnabled {
+            Button {
+                appModel.pip.toggle()
+                showOverlay()
+            } label: {
+                Image(systemName: appModel.pip.isActive ? "pip.exit" : "pip.enter")
+                    .font(.title)
+                    .foregroundStyle(appModel.pip.isPossible ? GuideTokens.text : GuideTokens.text4)
+                    .padding(20)
+                    .glassEffect(.regular, in: .circle)
+            }
+            .buttonStyle(.plain)
+            .disabled(!appModel.pip.isPossible)
+            .accessibilityLabel(appModel.pip.isActive ? "Exit Picture in Picture" : "Picture in Picture")
+        }
+    }
+    #endif
 
     private var sleepWarningOverlay: some View {
         VStack(spacing: 16) {
@@ -460,7 +698,66 @@ struct NowPlayingView: View {
         }
     }
 
+    private func progress(of p: Program) -> Double {
+        let total = p.stop.timeIntervalSince(p.start)
+        guard total > 0 else { return 0 }
+        return min(1, max(0, Date.now.timeIntervalSince(p.start) / total))
+    }
+
     private func refreshNowPlaying() async {
         nowPlaying = try? await appModel.nowPlaying(for: currentChannel)
+    }
+}
+
+
+// MARK: - Signal chip
+
+/// Compact signal meter for the active tuner. Strength/quality are the two
+/// numbers that matter for an antenna: strength is raw RF, quality is what
+/// the decoder can actually use. Colour follows the worse of the two.
+struct SignalChip: View {
+    let status: HDHRTunerStatus
+
+    private var strength: Int { status.SignalStrengthPercent ?? 0 }
+    private var quality: Int { status.SignalQualityPercent ?? 0 }
+    private var worst: Int { min(strength, quality) }
+
+    private var tint: Color {
+        if worst >= 70 { return Color(hex: 0x3DDC84) }
+        if worst >= 45 { return GuideTokens.accent2 }
+        return GuideTokens.live
+    }
+
+    private var bars: Int {
+        switch worst {
+        case 80...: return 4
+        case 60..<80: return 3
+        case 40..<60: return 2
+        case 1..<40: return 1
+        default: return 0
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<4, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(i < bars ? tint : Color.white.opacity(0.18))
+                        .frame(width: 5, height: CGFloat(6 + i * 4))
+                }
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Signal \(strength)%")
+                Text("Quality \(quality)%")
+            }
+            .font(.caption2.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(GuideTokens.text2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: .capsule)
+        .accessibilityLabel("Signal strength \(strength) percent, quality \(quality) percent")
     }
 }

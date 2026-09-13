@@ -82,11 +82,113 @@ enum ProgramType {
     }
 }
 
+// MARK: - Genre filter
+
+enum GuideGenreFilter: String, CaseIterable, Identifiable {
+    case all, sports, movies, news, kids, comedy, drama
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return "All"
+        case .sports: return "Sports"
+        case .movies: return "Movies"
+        case .news: return "News"
+        case .kids: return "Kids"
+        case .comedy: return "Comedy"
+        case .drama: return "Drama"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .sports: return "sportscourt"
+        case .movies: return "film"
+        case .news: return "newspaper"
+        case .kids: return "figure.and.child.holdinghands"
+        case .comedy: return "face.smiling"
+        case .drama: return "theatermasks"
+        }
+    }
+
+    func matches(_ program: Program) -> Bool {
+        switch self {
+        case .all: return true
+        case .sports: return ProgramType.from(program) == .sports
+        case .movies: return ProgramType.from(program) == .movie
+        case .news: return ProgramType.from(program) == .news
+        case .kids: return ProgramType.from(program) == .kids
+        case .comedy: return ProgramType.from(program) == .comedy
+        case .drama: return ProgramType.from(program) == .drama
+        }
+    }
+}
+
+// MARK: - Jump targets
+
+enum GuideJumpTarget: CaseIterable, Identifiable {
+    case now, tonight, tomorrow
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .now: return "Now"
+        case .tonight: return "Tonight"
+        case .tomorrow: return "Tomorrow"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .now: return "clock"
+        case .tonight: return "moon.stars"
+        case .tomorrow: return "sunrise"
+        }
+    }
+
+    /// Resolve to a viewport start. Tonight = 8 pm today (or now if it's
+    /// already past); Tomorrow = 8 am.
+    func viewportStart(now: Date = .now, calendar: Calendar = .current) -> Date {
+        switch self {
+        case .now:
+            return now
+        case .tonight:
+            let eight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now) ?? now
+            return max(eight, now)
+        case .tomorrow:
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            return calendar.date(bySettingHour: 8, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+        }
+    }
+
+    /// The days a Day picker should offer: today plus the next six, matching
+    /// the week of listings Gracenote ingests. Each lands at 8 am.
+    static func dayOptions(now: Date = .now, calendar: Calendar = .current) -> [(label: String, start: Date)] {
+        let today = calendar.startOfDay(for: now)
+        return (0..<7).compactMap { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today),
+                  let start = calendar.date(bySettingHour: 8, minute: 0, second: 0, of: day)
+            else { return nil }
+            let label: String
+            switch offset {
+            case 0: label = "Today"
+            case 1: label = "Tomorrow"
+            default: label = day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+            }
+            return (label: label, start: offset == 0 ? max(start, now) : start)
+        }
+    }
+}
+
 // MARK: - Focus payload
 
 private struct FocusedItem: Equatable, Hashable {
     let channelID: String
-    let programID: String
+    /// `nil` when the row's "no listings" placeholder cell is focused.
+    let programID: String?
 }
 
 // MARK: - GuideView
@@ -94,12 +196,30 @@ private struct FocusedItem: Equatable, Hashable {
 struct GuideView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.layoutMetrics) private var metrics
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var viewportStart: Date = Self.snapToHalfHour(.now)
     @State private var presentedChannel: Channel?
     @State private var detailProgram: Program?
+    @State private var genre: GuideGenreFilter = .all
 
-    // Focus drives the hero card.
+    /// Channels with at least one program matching `genre` in the current
+    /// window. Filled by the genre query; `nil` while a query is in flight
+    /// on first switch so rows don't flash empty.
+    @State private var genreChannelIDs: Set<String>?
+
+    // Single source of truth for which cell has focus. Cells bind to it with
+    // `.focused(_:equals:)`, the hero derives from it, and tvOS left/right
+    // moves it explicitly (see `moveFocusHorizontally`).
+    @FocusState private var focusedItem: FocusedItem?
+
+    // Programs each row currently has loaded, keyed by channel ID, so the
+    // hero and horizontal navigation can resolve a `FocusedItem` without
+    // another store round-trip.
+    @State private var rowPrograms: [String: [Program]] = [:]
+
+    // Derived from `focusedItem`; kept as state so the hero holds its last
+    // program while focus sits on the hero buttons or the time controls.
     @State private var focusedProgram: Program?
     @State private var focusedChannel: Channel?
 
@@ -120,7 +240,7 @@ struct GuideView: View {
                 TimelineGuideView(
                     onTune: { ch in
                         appModel.tune(to: ch)
-                        presentedChannel = ch
+                        if !appModel.prefersDockedPlayback { presentedChannel = ch }
                     },
                     onShowProgramDetail: { detailProgram = $0 }
                 )
@@ -129,6 +249,16 @@ struct GuideView: View {
             }
         }
         .task { nowLinePulse = true }
+        // The guide always opens on "now": state survives tab switches and
+        // the app can sit resident for days, so the stored viewport is
+        // re-anchored every time the screen appears or the app comes back.
+        .onAppear { viewportStart = Self.snapToHalfHour(.now) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { viewportStart = Self.snapToHalfHour(.now) }
+        }
+        .onChange(of: focusedItem) { _, item in
+            syncHero(to: item)
+        }
         .onChange(of: focusedChannel?.id) { _, newID in
             scheduleTune(channelID: newID)
         }
@@ -138,6 +268,7 @@ struct GuideView: View {
         }
         .sheet(item: $detailProgram) { program in
             ProgramDetailView(program: program)
+                .environment(appModel)
         }
     }
 
@@ -158,7 +289,7 @@ struct GuideView: View {
                     showLivePreview: shouldShowLivePreview,
                     onWatchLive: { ch in
                         appModel.tune(to: ch)
-                        presentedChannel = ch
+                        if !appModel.prefersDockedPlayback { presentedChannel = ch }
                     },
                     onMoreInfo: { detailProgram = $0 }
                 )
@@ -178,12 +309,84 @@ struct GuideView: View {
     /// (a) fullscreen player isn't presented (avoids two views fighting over the
     /// VLC drawable), and (b) the active player is on the focused row's channel.
     private var shouldShowLivePreview: Bool {
-        guard presentedChannel == nil else { return false }
+        guard presentedChannel == nil, !appModel.dockedPlayerVisible else { return false }
         guard let focused = focusedChannel,
               let active = appModel.player.activeChannel
         else { return false }
         return focused.id == active.id
     }
+
+    /// Resolve a focused cell to the channel + program the hero shows. A
+    /// `nil` item (focus moved to the hero buttons or time controls) leaves
+    /// the hero on whatever it last showed.
+    private func syncHero(to item: FocusedItem?) {
+        guard let item,
+              let channel = appModel.visibleChannels.first(where: { $0.id == item.channelID })
+        else { return }
+        focusedChannel = channel
+        if let programID = item.programID {
+            focusedProgram = rowPrograms[channel.id]?.first { $0.id == programID }
+        } else {
+            focusedProgram = nil
+        }
+    }
+
+    #if os(tvOS)
+    /// tvOS left/right at the edges of the time window. The focus engine
+    /// handles ordinary in-row moves itself — and `onMoveCommand` fires *in
+    /// addition* to that move, so anything we do here for a move the engine
+    /// could make would double-step. We therefore act only when the engine
+    /// has nothing to move to: the focused cell is clipped at that edge, or
+    /// the neighbouring program lies outside the window. Then we pan time
+    /// and place focus explicitly.
+    private func moveFocusHorizontally(_ direction: Int, windowEnd: Date) {
+        let slot: TimeInterval = 30 * 60
+        let shift = Double(direction) * slot
+
+        guard let item = focusedItem,
+              let programID = item.programID,
+              let list = rowPrograms[item.channelID],
+              let current = list.first(where: { $0.id == programID })
+        else {
+            // Placeholder cell (or nothing resolvable) — just pan time.
+            viewportStart = viewportStart.addingTimeInterval(shift)
+            return
+        }
+
+        if direction > 0 {
+            // Clipped at the right edge: reveal more of the same program.
+            if current.stop > windowEnd {
+                viewportStart = viewportStart.addingTimeInterval(slot)
+                return
+            }
+            guard let next = list.first(where: { $0.start > current.start }) else {
+                viewportStart = viewportStart.addingTimeInterval(slot)
+                return
+            }
+            // Next program is on screen: the engine moves there on its own.
+            guard next.start >= windowEnd else { return }
+            let lastSlotStart = Self.snapToHalfHour(next.start)
+                .addingTimeInterval(-Double(metrics.guideVisibleSlots - 1) * slot)
+            viewportStart = max(viewportStart.addingTimeInterval(slot), lastSlotStart)
+            focusedItem = FocusedItem(channelID: item.channelID, programID: next.id)
+        } else {
+            if current.start < viewportStart {
+                viewportStart = viewportStart.addingTimeInterval(-slot)
+                return
+            }
+            guard let prev = list.last(where: { $0.start < current.start }) else {
+                viewportStart = viewportStart.addingTimeInterval(-slot)
+                return
+            }
+            guard prev.stop <= viewportStart else { return }
+            viewportStart = min(
+                viewportStart.addingTimeInterval(-slot),
+                Self.snapToHalfHour(prev.start)
+            )
+            focusedItem = FocusedItem(channelID: item.channelID, programID: prev.id)
+        }
+    }
+    #endif
 
     private func scheduleTune(channelID: String?) {
         pendingTune?.cancel()
@@ -214,26 +417,70 @@ struct GuideView: View {
         )
     }
 
+    @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 16) {
+        if metrics.compactGuide {
+            ScrollView(.horizontal, showsIndicators: false) {
+                controlsRow
+            }
+        } else {
+            controlsRow
+        }
+    }
+
+    private var controlsRow: some View {
+        HStack(spacing: 12) {
             Button {
                 viewportStart = viewportStart.addingTimeInterval(-30 * 60)
             } label: {
-                Label("Earlier", systemImage: "chevron.left")
+                Image(systemName: "chevron.left")
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Earlier")
+
+            ForEach(GuideJumpTarget.allCases) { target in
+                Button {
+                    viewportStart = Self.snapToHalfHour(target.viewportStart())
+                } label: {
+                    Label(target.label, systemImage: target.symbol)
+                }
+                .buttonStyle(.glass)
+            }
+
+            Menu {
+                ForEach(GuideJumpTarget.dayOptions(), id: \.start) { option in
+                    Button(option.label) {
+                        viewportStart = Self.snapToHalfHour(option.start)
+                    }
+                }
+            } label: {
+                Label("Day", systemImage: "calendar")
             }
             .buttonStyle(.glass)
 
             Button {
-                viewportStart = Self.snapToHalfHour(.now)
-            } label: {
-                Label("Now", systemImage: "clock")
-            }
-            .buttonStyle(.glassProminent)
-
-            Button {
                 viewportStart = viewportStart.addingTimeInterval(30 * 60)
             } label: {
-                Label("Later", systemImage: "chevron.right")
+                Image(systemName: "chevron.right")
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Later")
+
+            Divider()
+                .frame(height: 28)
+                .overlay(GuideTokens.borderStrong)
+
+            Menu {
+                ForEach(GuideGenreFilter.allCases) { g in
+                    Button {
+                        genre = g
+                    } label: {
+                        Label(g.label, systemImage: g.symbol)
+                    }
+                }
+            } label: {
+                Label(genre == .all ? "Genre" : genre.label, systemImage: genre.symbol)
+                    .foregroundStyle(genre == .all ? GuideTokens.text : GuideTokens.accent2)
             }
             .buttonStyle(.glass)
 
@@ -243,10 +490,48 @@ struct GuideView: View {
                 .font(.headline)
                 .foregroundStyle(GuideTokens.text2)
         }
+        .task(id: GenreQueryKey(genre: genre, viewportStart: viewportStart, refresh: appModel.lastEPGRefresh)) {
+            await refreshGenreFilter()
+        }
+    }
+
+    private struct GenreQueryKey: Hashable {
+        let genre: GuideGenreFilter
+        let viewportStart: Date
+        let refresh: Date?
+    }
+
+    /// Genre filtering is done in one store query over the visible window
+    /// rather than per row, so switching genres doesn't fan out 64 reads.
+    private func refreshGenreFilter() async {
+        guard genre != .all else {
+            genreChannelIDs = nil
+            return
+        }
+        let windowEnd = viewportStart.addingTimeInterval(Double(metrics.guideVisibleSlots) * 30 * 60)
+        let needle: String
+        switch genre {
+        case .sports: needle = "sport"
+        case .movies: needle = "movie"
+        case .news: needle = "news"
+        case .kids: needle = "kid"
+        case .comedy: needle = "comedy"
+        case .drama: needle = "drama"
+        case .all: needle = ""
+        }
+        let matches = (try? await appModel.programs(inCategoryContaining: needle, from: viewportStart, to: windowEnd)) ?? []
+        let xmltvIDs = Set(matches.filter { genre.matches($0) }.map(\.channelXmltvID))
+        genreChannelIDs = Set(appModel.visibleChannels.filter { xmltvIDs.contains($0.xmltvID) }.map(\.id))
+    }
+
+    private var filteredChannels: [Channel] {
+        let all = appModel.visibleChannels
+        guard genre != .all, let ids = genreChannelIDs else { return all }
+        return all.filter { ids.contains($0.id) }
     }
 
     private var gridSection: some View {
-        let totalSlots = GuideTokens.visibleSlots
+        let totalSlots = metrics.guideVisibleSlots
         let windowEnd = viewportStart.addingTimeInterval(Double(totalSlots) * 30 * 60)
 
         let section = VStack(alignment: .leading, spacing: 12) {
@@ -259,8 +544,14 @@ struct GuideView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 ZStack(alignment: .topLeading) {
                     LazyVStack(alignment: .leading, spacing: GuideTokens.rowGap) {
-                        ForEach(appModel.visibleChannels.prefix(64)) { channel in
+                        ForEach(filteredChannels.prefix(64)) { channel in
                             row(for: channel, windowEnd: windowEnd)
+                        }
+                        if genre != .all, genreChannelIDs?.isEmpty == true {
+                            Text("Nothing in \(genre.label) for this time window.")
+                                .font(.system(size: 20 * metrics.typeScale))
+                                .foregroundStyle(GuideTokens.text3)
+                                .padding(.top, 24)
                         }
                     }
                     .padding(.bottom, 60)
@@ -277,9 +568,9 @@ struct GuideView: View {
             .onMoveCommand { direction in
                 switch direction {
                 case .left:
-                    viewportStart = viewportStart.addingTimeInterval(-30 * 60)
+                    moveFocusHorizontally(-1, windowEnd: windowEnd)
                 case .right:
-                    viewportStart = viewportStart.addingTimeInterval(30 * 60)
+                    moveFocusHorizontally(1, windowEnd: windowEnd)
                 default:
                     break
                 }
@@ -313,13 +604,17 @@ struct GuideView: View {
             windowEnd: windowEnd,
             onTapAiring: { ch in
                 appModel.tune(to: ch)
-                presentedChannel = ch
+                if !appModel.prefersDockedPlayback { presentedChannel = ch }
             },
             onTapFuture: { detailProgram = $0 },
-            onFocus: { program, ch in
-                focusedProgram = program
-                focusedChannel = ch
-            }
+            genre: genre,
+            onProgramsLoaded: { loaded in
+                rowPrograms[channel.id] = loaded
+                // A row that finished loading while its cell is already
+                // focused (e.g. right after a refresh) must still feed the hero.
+                if focusedItem?.channelID == channel.id { syncHero(to: focusedItem) }
+            },
+            focus: $focusedItem
         )
         #if os(tvOS)
         view.focusSection()
@@ -335,15 +630,17 @@ struct GuideView: View {
     private var nowLineOverlay: some View {
         TimelineView(.everyMinute) { context in
             let nowOffset = CGFloat(context.date.timeIntervalSince(viewportStart) / 60) * metrics.pxPerMinute
-            let visibleWidth = CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth
+            let visibleWidth = CGFloat(metrics.guideVisibleSlots) * metrics.guideTimeColumnWidth
             let isInWindow = nowOffset >= 0 && nowOffset <= visibleWidth
             if isInWindow {
                 Rectangle()
                     .fill(GuideTokens.live)
                     .frame(width: 2)
                     .shadow(color: GuideTokens.live.opacity(0.6), radius: 6, x: 0, y: 0)
-                    .opacity(nowLinePulse ? 1.0 : 0.85)
-                    .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: nowLinePulse)
+                    // No repeatForever pulse here: a perpetual SwiftUI
+                    // animation kept the attribute graph re-evaluating every
+                    // frame even underneath the fullscreen player (~5% of
+                    // main-thread time in the iPhone trace).
                     .frame(maxHeight: .infinity, alignment: .top)
                     .offset(x: metrics.guideChannelRailWidth + nowOffset)
             }
@@ -374,7 +671,7 @@ private struct GuideTimeHeader: View {
                 ForEach(0..<slotCount, id: \.self) { i in
                     let date = viewportStart.addingTimeInterval(Double(i) * 30 * 60)
                     Text(date, format: .dateTime.hour().minute())
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(.system(size: 20 * metrics.typeScale, weight: .semibold))
                         .foregroundStyle(GuideTokens.text3)
                         .monospacedDigit()
                         .frame(width: metrics.guideTimeColumnWidth, alignment: .leading)
@@ -388,7 +685,7 @@ private struct GuideTimeHeader: View {
                 let visibleWidth = CGFloat(slotCount) * metrics.guideTimeColumnWidth
                 if nowOffset >= 0 && nowOffset <= visibleWidth {
                     Text(context.date, format: .dateTime.hour().minute())
-                        .font(.system(size: 16, weight: .heavy))
+                        .font(.system(size: 16 * metrics.typeScale, weight: .heavy))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
@@ -411,7 +708,9 @@ private struct GuideRowView: View {
     let windowEnd: Date
     let onTapAiring: (Channel) -> Void
     let onTapFuture: (Program) -> Void
-    let onFocus: (Program, Channel) -> Void
+    let genre: GuideGenreFilter
+    let onProgramsLoaded: ([Program]) -> Void
+    let focus: FocusState<FocusedItem?>.Binding
 
     @Environment(AppModel.self) private var appModel
     @Environment(\.layoutMetrics) private var metrics
@@ -419,23 +718,35 @@ private struct GuideRowView: View {
     @State private var didLoad: Bool = false
 
     var body: some View {
+        let visible = programs.filter { $0.stop > viewportStart && $0.start < windowEnd }
+
         HStack(spacing: 0) {
             GuideChannelRailCell(channel: channel)
                 .frame(width: metrics.guideChannelRailWidth, height: metrics.guideRowHeight, alignment: .leading)
 
             ZStack(alignment: .topLeading) {
-                if didLoad && programs.isEmpty {
-                    Text("No listings — refresh in Settings")
-                        .font(.system(size: 14))
-                        .foregroundStyle(GuideTokens.text4)
-                        .padding(.horizontal, 16)
+                // Every row must contain a focusable cell, otherwise the tvOS
+                // focus engine has nothing to land on and vertical navigation
+                // stops dead at the row above. The placeholder also keeps the
+                // channel selectable (press = watch it) when the guide has no
+                // data for it.
+                if visible.isEmpty {
+                    GuideEmptyRowCell(
+                        message: didLoad && programs.isEmpty
+                            ? "No listings — refresh in Settings"
+                            : "No listings for this time",
+                        channel: channel,
+                        onTap: { onTapAiring(channel) },
+                        focus: focus
+                    )
                 }
-                ForEach(programs.filter { $0.stop > viewportStart && $0.start < windowEnd }) { program in
+                ForEach(visible) { program in
                     GuideProgramCell(
                         program: program,
                         channel: channel,
                         viewportStart: viewportStart,
                         windowEnd: windowEnd,
+                        dimmed: !genre.matches(program),
                         onTap: {
                             if program.start <= .now && program.stop > .now {
                                 onTapAiring(channel)
@@ -443,12 +754,12 @@ private struct GuideRowView: View {
                                 onTapFuture(program)
                             }
                         },
-                        onFocusAcquired: { onFocus(program, channel) }
+                        focus: focus
                     )
                 }
             }
             .frame(
-                width: CGFloat(GuideTokens.visibleSlots) * metrics.guideTimeColumnWidth,
+                width: CGFloat(metrics.guideVisibleSlots) * metrics.guideTimeColumnWidth,
                 height: metrics.guideRowHeight,
                 alignment: .topLeading
             )
@@ -480,6 +791,7 @@ private struct GuideRowView: View {
         guard !Task.isCancelled else { return }
         programs = result
         didLoad = true
+        onProgramsLoaded(result)
     }
 
     private struct TaskKey: Hashable {
@@ -497,20 +809,21 @@ private struct GuideRowView: View {
 
 private struct GuideChannelRailCell: View {
     let channel: Channel
+    @Environment(\.layoutMetrics) private var metrics
 
     var body: some View {
-        HStack(spacing: 14) {
-            GuideChannelLogo(channel: channel, size: 56)
+        HStack(spacing: 14 * metrics.typeScale) {
+            GuideChannelLogo(channel: channel, size: 56 * metrics.typeScale)
             VStack(alignment: .leading, spacing: 2) {
                 Text(channel.guideNumber)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 22 * metrics.typeScale, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(GuideTokens.text)
                 // No per-row HD tag: nearly every OTA channel is HD, so it
                 // reads as noise repeated down the rail. HD lives in the
                 // channel cards and the hero badge instead.
                 Text(channel.guideName)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 16 * metrics.typeScale, weight: .semibold))
                     .foregroundStyle(GuideTokens.text3)
                     .lineLimit(1)
             }
@@ -564,6 +877,63 @@ private struct GuideChannelLogo: View {
     }
 }
 
+// MARK: - Empty row cell
+
+private struct GuideEmptyRowCell: View {
+    let message: String
+    let channel: Channel
+    let onTap: () -> Void
+    let focus: FocusState<FocusedItem?>.Binding
+
+    @Environment(\.layoutMetrics) private var metrics
+
+    private var item: FocusedItem { FocusedItem(channelID: channel.id, programID: nil) }
+
+    #if os(tvOS)
+    private var isHighlighted: Bool { focus.wrappedValue == item }
+    #else
+    @State private var isHovered: Bool = false
+    @State private var isPressed: Bool = false
+    private var isHighlighted: Bool { isHovered || isPressed }
+    #endif
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: "tv")
+                    .font(.system(size: 16 * metrics.typeScale, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 16 * metrics.typeScale, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(isHighlighted ? GuideTokens.text : GuideTokens.text4)
+            .padding(.horizontal, 16)
+            .frame(
+                width: CGFloat(metrics.guideVisibleSlots) * metrics.guideTimeColumnWidth - 6,
+                height: metrics.guideRowHeight,
+                alignment: .leading
+            )
+            .background(isHighlighted ? GuideTokens.surface2 : Color.clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(
+                        isHighlighted ? GuideTokens.focusRing : GuideTokens.border,
+                        style: StrokeStyle(lineWidth: isHighlighted ? 2 : 1, dash: isHighlighted ? [] : [6, 6])
+                    )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        #if os(tvOS)
+        .buttonStyle(.plain)
+        #else
+        .buttonStyle(PressTrackingButtonStyle { isPressed = $0 })
+        .onHover { isHovered = $0 }
+        #endif
+        .focused(focus, equals: item)
+        .animation(.easeOut(duration: 0.15), value: isHighlighted)
+    }
+}
+
 // MARK: - Program cell
 
 private struct GuideProgramCell: View {
@@ -571,14 +941,16 @@ private struct GuideProgramCell: View {
     let channel: Channel
     let viewportStart: Date
     let windowEnd: Date
+    var dimmed: Bool = false
     let onTap: () -> Void
-    let onFocusAcquired: () -> Void
+    let focus: FocusState<FocusedItem?>.Binding
 
     @Environment(\.layoutMetrics) private var metrics
 
+    private var item: FocusedItem { FocusedItem(channelID: channel.id, programID: program.id) }
+
     #if os(tvOS)
-    @Environment(\.isFocused) private var environmentFocused
-    private var isHighlighted: Bool { environmentFocused }
+    private var isHighlighted: Bool { focus.wrappedValue == item }
     #else
     @State private var isHovered: Bool = false
     @State private var isPressed: Bool = false
@@ -594,13 +966,14 @@ private struct GuideProgramCell: View {
         #else
         .buttonStyle(PressTrackingButtonStyle { isPressed = $0 })
         #endif
-        .offset(x: offsetX, y: 0)
+        .focused(focus, equals: item)
+        .opacity(dimmed && !isHighlighted ? 0.35 : 1)
         .scaleEffect(isHighlighted ? 1.04 : 1.0, anchor: .leading)
         .zIndex(isHighlighted ? 3 : 1)
+        // Leading padding rather than `.offset` so the cell's layout frame —
+        // which is what the focus engine measures — is at its real position.
+        .padding(.leading, offsetX)
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHighlighted)
-        .onChange(of: isHighlighted) { _, newValue in
-            if newValue { onFocusAcquired() }
-        }
         #if !os(tvOS)
         .onHover { isHovered = $0 }
         #endif
@@ -615,17 +988,28 @@ private struct GuideProgramCell: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 if program.isLive {
-                    Circle()
-                        .fill(GuideTokens.live)
-                        .frame(width: 8, height: 8)
+                    if spanSlots >= 2 {
+                        Text("LIVE")
+                            .font(.system(size: 11 * metrics.typeScale, weight: .heavy))
+                            .tracking(0.8)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(GuideTokens.live)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                    } else {
+                        Circle()
+                            .fill(GuideTokens.live)
+                            .frame(width: 8, height: 8)
+                    }
                 }
                 Text(program.title)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 22 * metrics.typeScale, weight: .bold))
                     .foregroundStyle(textColor)
                     .lineLimit(1)
                 if program.isNew && spanSlots >= 2 {
                     Text("NEW")
-                        .font(.system(size: 11, weight: .heavy))
+                        .font(.system(size: 11 * metrics.typeScale, weight: .heavy))
                         .tracking(0.6)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -641,13 +1025,13 @@ private struct GuideProgramCell: View {
             // Airtime is always visible — it's the one datum every EPG glance
             // needs; the subtitle appends rather than replacing it.
             Text(metaLine)
-                .font(.system(size: 14))
+                .font(.system(size: 14 * metrics.typeScale))
                 .foregroundStyle(subTextColor)
                 .monospacedDigit()
                 .lineLimit(1)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16 * metrics.typeScale)
+        .padding(.vertical, 10 * metrics.typeScale)
         .frame(width: width, height: metrics.guideRowHeight, alignment: .topLeading)
         .background(cellBackground(tint: tint))
         .overlay(
@@ -712,20 +1096,27 @@ private struct GuideHeroCardView: View {
     let onMoreInfo: (Program) -> Void
 
     @Environment(\.layoutMetrics) private var metrics
+    @Environment(AppModel.self) private var appModel
 
     var body: some View {
-        if let program, let channel {
-            HStack(alignment: .bottom, spacing: 36) {
-                artTile(for: program, channel: channel)
-                detailColumn(program: program, channel: channel)
+        if let channel {
+            HStack(alignment: .bottom, spacing: 36 * metrics.typeScale) {
+                if !metrics.compactGuide {
+                    artTile(for: program, channel: channel)
+                }
+                if let program {
+                    detailColumn(program: program, channel: channel)
+                } else {
+                    channelOnlyColumn(channel: channel)
+                }
             }
         } else {
             placeholder
         }
     }
 
-    private func artTile(for program: Program, channel: Channel) -> some View {
-        let tint = ProgramType.from(program)
+    private func artTile(for program: Program?, channel: Channel) -> some View {
+        let tint = program.map(ProgramType.from) ?? .drama
         return ZStack(alignment: .bottomLeading) {
             // Backdrop: type-tinted gradient. Always present; serves as a
             // placeholder while the VLC player buffers in.
@@ -755,8 +1146,8 @@ private struct GuideHeroCardView: View {
             }
 
             HStack {
-                Text(program.title.uppercased())
-                    .font(.system(size: 14, weight: .heavy))
+                Text((program?.title ?? channel.guideName).uppercased())
+                    .font(.system(size: 14 * metrics.typeScale, weight: .heavy))
                     .tracking(2.0)
                     .foregroundStyle(Color.white.opacity(0.7))
                     .lineLimit(1)
@@ -779,11 +1170,11 @@ private struct GuideHeroCardView: View {
             HStack(spacing: 14) {
                 GuideChannelLogo(channel: channel, size: 44)
                 Text("\(channel.guideNumber) · \(channel.guideName)")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 22 * metrics.typeScale, weight: .semibold))
                     .foregroundStyle(GuideTokens.text2)
                 if program.isNew {
                     Text("NEW")
-                        .font(.system(size: 14, weight: .heavy))
+                        .font(.system(size: 14 * metrics.typeScale, weight: .heavy))
                         .tracking(1.0)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -792,7 +1183,7 @@ private struct GuideHeroCardView: View {
                 }
                 if let rating = program.rating, !rating.isEmpty {
                     Text(rating)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 18 * metrics.typeScale, weight: .semibold))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
                         .overlay(
@@ -803,7 +1194,7 @@ private struct GuideHeroCardView: View {
                 }
             }
             Text(program.title)
-                .font(.system(size: 56, weight: .bold))
+                .font(.system(size: 56 * metrics.typeScale, weight: .bold))
                 .tracking(-0.6)
                 .lineLimit(1)
                 .foregroundStyle(GuideTokens.text)
@@ -811,18 +1202,24 @@ private struct GuideHeroCardView: View {
             HStack(spacing: 8) {
                 if let subtitle = program.subtitle, !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 24, weight: .regular))
+                        .font(.system(size: 24 * metrics.typeScale, weight: .regular))
                         .foregroundStyle(GuideTokens.text2)
                 }
+                if let ep = program.episodeNumber, !ep.isEmpty {
+                    Text(ep)
+                        .font(.system(size: 20 * metrics.typeScale, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(GuideTokens.text3)
+                }
                 Text(timeRange(for: program))
-                    .font(.system(size: 22, weight: .regular))
+                    .font(.system(size: 22 * metrics.typeScale, weight: .regular))
                     .foregroundStyle(GuideTokens.text3)
             }
             .lineLimit(1)
 
             if let desc = program.desc, !desc.isEmpty {
                 Text(desc)
-                    .font(.system(size: 22))
+                    .font(.system(size: 22 * metrics.typeScale))
                     .foregroundStyle(GuideTokens.text2)
                     .lineLimit(2)
                     .frame(maxWidth: 820, alignment: .leading)
@@ -831,20 +1228,65 @@ private struct GuideHeroCardView: View {
             HStack(spacing: 14) {
                 Button { onWatchLive(channel) } label: {
                     Label("Watch Live", systemImage: "play.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
+                        .font(.system(size: 22 * metrics.typeScale, weight: .bold))
+                        .padding(.horizontal, 28 * metrics.typeScale)
+                        .padding(.vertical, 14 * metrics.typeScale)
                 }
                 .buttonStyle(GuideHeroPrimaryButtonStyle())
                 .disabled(!isAiring(program))
 
                 Button { onMoreInfo(program) } label: {
                     Text("More Info")
-                        .font(.system(size: 22, weight: .semibold))
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
+                        .font(.system(size: 22 * metrics.typeScale, weight: .semibold))
+                        .padding(.horizontal, 28 * metrics.typeScale)
+                        .padding(.vertical, 14 * metrics.typeScale)
                 }
                 .buttonStyle(GuideHeroSecondaryButtonStyle())
+
+                if FeatureFlags.reminders, program.start > .now {
+                    let set = appModel.reminders.isSet(programID: program.id)
+                    Button { appModel.reminders.toggle(program: program, channel: channel) } label: {
+                        Label(set ? "Reminder Set" : "Remind Me", systemImage: set ? "bell.fill" : "bell")
+                            .font(.system(size: 22 * metrics.typeScale, weight: .semibold))
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(GuideHeroSecondaryButtonStyle())
+                }
+            }
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Hero for a row with no listings: channel identity, an honest "no
+    /// listings" line, and Watch Live (the tuner doesn't need guide data).
+    private func channelOnlyColumn(channel: Channel) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                GuideChannelLogo(channel: channel, size: 44)
+                Text("\(channel.guideNumber) · \(channel.guideName)")
+                    .font(.system(size: 22 * metrics.typeScale, weight: .semibold))
+                    .foregroundStyle(GuideTokens.text2)
+            }
+            Text(channel.guideName)
+                .font(.system(size: 56 * metrics.typeScale, weight: .bold))
+                .tracking(-0.6)
+                .lineLimit(1)
+                .foregroundStyle(GuideTokens.text)
+
+            Text("No listings available for this channel.")
+                .font(.system(size: 22 * metrics.typeScale))
+                .foregroundStyle(GuideTokens.text3)
+
+            HStack(spacing: 14) {
+                Button { onWatchLive(channel) } label: {
+                    Label("Watch Live", systemImage: "play.fill")
+                        .font(.system(size: 22 * metrics.typeScale, weight: .bold))
+                        .padding(.horizontal, 28 * metrics.typeScale)
+                        .padding(.vertical, 14 * metrics.typeScale)
+                }
+                .buttonStyle(GuideHeroPrimaryButtonStyle())
             }
             .padding(.top, 8)
         }
@@ -853,15 +1295,18 @@ private struct GuideHeroCardView: View {
 
     private var placeholder: some View {
         HStack(alignment: .center, spacing: 24) {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(GuideTokens.surface)
-                .frame(width: metrics.heroCardSize.width, height: metrics.heroCardSize.height)
+            if !metrics.compactGuide {
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(GuideTokens.surface)
+                    .frame(width: metrics.heroCardSize.width, height: metrics.heroCardSize.height)
+            }
             VStack(alignment: .leading, spacing: 12) {
                 Text("Tonight's Guide")
-                    .font(.system(size: 56, weight: .bold))
+                    .font(.system(size: 56 * metrics.typeScale, weight: .bold))
                     .tracking(-0.6)
+                    .foregroundStyle(GuideTokens.text)
                 Text("Pick a program for details.")
-                    .font(.system(size: 22))
+                    .font(.system(size: 22 * metrics.typeScale))
                     .foregroundStyle(GuideTokens.text3)
             }
             Spacer()
@@ -934,9 +1379,10 @@ private struct GuideHeroSecondaryButtonStyle: ButtonStyle {
 // MARK: - Badges
 
 struct HDBadge: View {
+    @Environment(\.layoutMetrics) private var metrics
     var body: some View {
         Text("HD")
-            .font(.system(size: 14, weight: .heavy))
+            .font(.system(size: 14 * metrics.typeScale, weight: .heavy))
             .tracking(0.6)
             .foregroundStyle(Color(hex: 0x1A0A04))
             .padding(.horizontal, 7)
@@ -951,3 +1397,5 @@ struct HDBadge: View {
             )
     }
 }
+
+

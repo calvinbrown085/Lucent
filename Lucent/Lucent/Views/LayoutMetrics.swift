@@ -118,14 +118,15 @@ struct LayoutMetrics: Sendable, Equatable {
         #if os(tvOS)
         return .tvOS
         #else
-        // Compact width = iPhone portrait, or iPhone landscape on small devices,
-        // or iPad multitasking in narrow Split View. Falls back to the timeline guide.
+        // Plus/Max-size iPhones report a *regular* horizontal size class in
+        // landscape, which used to route them to the iPad profile: hero card,
+        // wide chip row, no room left for the guide rows. Decide by idiom
+        // first, size class second.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            return vsc == .compact ? .iPhoneLandscape : .iPhoneCompact
+        }
+        // iPad in a narrow Split View slot behaves like a phone in portrait.
         if hsc == .compact {
-            // On iPhone landscape (regular vertical / compact horizontal is rare —
-            // iPhone landscape is usually compact/compact), keep the grid.
-            if vsc == .compact {
-                return .iPhoneLandscape
-            }
             return .iPhoneCompact
         }
         return .iPadRegular

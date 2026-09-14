@@ -281,23 +281,28 @@ struct GuideView: View {
             VStack(alignment: .leading, spacing: 0) {
                 controls
                     .padding(.horizontal, metrics.contentHorizontalPadding)
-                    .padding(.top, 28)
-                    .padding(.bottom, 18)
+                    .padding(.top, metrics.compactGuide ? 8 : 28)
+                    .padding(.bottom, metrics.compactGuide ? 10 : 18)
 
-                GuideHeroCardView(
-                    program: focusedProgram,
-                    channel: focusedChannel,
-                    showLivePreview: shouldShowLivePreview,
-                    onWatchLive: { ch in
-                        appModel.tune(to: ch)
-                        if !appModel.prefersDockedPlayback { presentedChannel = ch }
-                    },
-                    onMoreInfo: { detailProgram = $0 }
-                )
-                .padding(.horizontal, metrics.contentHorizontalPadding)
-                .frame(height: metrics.heroHeight)
+                // The hero is driven by remote focus (tvOS) or pointer hover
+                // (iPad); on a phone it only ever shows its placeholder and,
+                // in landscape, left no room for the rows at all.
+                if !metrics.compactGuide {
+                    GuideHeroCardView(
+                        program: focusedProgram,
+                        channel: focusedChannel,
+                        showLivePreview: shouldShowLivePreview,
+                        onWatchLive: { ch in
+                            appModel.tune(to: ch)
+                            if !appModel.prefersDockedPlayback { presentedChannel = ch }
+                        },
+                        onMoreInfo: { detailProgram = $0 }
+                    )
+                    .padding(.horizontal, metrics.contentHorizontalPadding)
+                    .frame(height: metrics.heroHeight)
 
-                Spacer(minLength: 24)
+                    Spacer(minLength: 24)
+                }
 
                 gridSection
                     .padding(.leading, metrics.contentHorizontalPadding)
@@ -819,6 +824,8 @@ private struct GuideChannelRailCell: View {
                 Text(channel.guideNumber)
                     .font(.system(size: 22 * metrics.typeScale, weight: .bold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .foregroundStyle(GuideTokens.text)
                 // No per-row HD tag: nearly every OTA channel is HD, so it
                 // reads as noise repeated down the rail. HD lives in the

@@ -1,5 +1,7 @@
 # Lucent
 
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/calvinbrown085)
+
 A native **tvOS 26** client for **HDHomeRun** tuners, with EPG data from **Gracenote** (default, postal-code-based) or a self-hosted **XMLTV** URL.
 
 ## Why this exists
@@ -105,6 +107,10 @@ No analytics. No telemetry. No remote servers operated by Lucent — guide data 
 - **[GRDB.swift](https://github.com/groue/GRDB.swift)** — MIT.
 
 The in-app **Acknowledgments** screen (Settings → Acknowledgments) carries the full LGPL notice required by TVVLCKit's license.
+
+## Support
+
+Lucent is free and open source. If it makes your living room a little nicer and you'd like to say thanks, you can [buy me a coffee](https://buymeacoffee.com/calvinbrown085). ☕
 
 ## License
 

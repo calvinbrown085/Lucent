@@ -18,6 +18,7 @@ struct RootView: View {
             .fullScreenCover(item: $model.pendingTuneChannel) { channel in
                 NowPlayingView(channel: channel)
                     .environment(appModel)
+                    .environment(\.layoutMetrics, resolvedMetrics)
             }
         #else
         GeometryReader { geo in
@@ -31,10 +32,15 @@ struct RootView: View {
                 }
         }
         .fullScreenCover(item: $model.pendingTuneChannel) { channel in
+            // Presentations don't inherit the environment set inside the
+            // GeometryReader above; without this the phone got the iPad
+            // overlay layout.
             NowPlayingView(channel: channel)
                 .environment(appModel)
+                .environment(\.layoutMetrics, resolvedMetrics)
         }
         .onOpenURL { url in appModel.handle(url: url) }
+        .preferredColorScheme(.dark)
         #endif
     }
 

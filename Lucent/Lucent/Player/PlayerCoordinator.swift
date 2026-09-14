@@ -306,8 +306,7 @@ final class PlayerCoordinator {
         let player = VLCMediaPlayer()
         player.media = media
         // Explicit rather than VLC's "auto": auto picks the "x" filter, which
-        // profiles at ~40% of app CPU on 1080i. "linear" is a cheap
-        // line-doubler that looks fine at phone/tablet sizes.
+        // costs ~14 points of CPU over "blend" on 1080i (see DeinterlaceMode).
         var filter = deinterlaceFilter
         #if DEBUG
         // A/B hook for on-device profiling (LUCENT_DEINTERLACE=x|linear|off).

@@ -37,6 +37,25 @@ final class PIPController: NSObject {
     /// the PiP window was closed with its X — the user wants playback to
     /// end, audio included.
     private var restoreRequested = false
+    private var backgroundStopCheck: Task<Void, Never>?
+
+    /// Debug-only event trail, printed and appended to Documents/pip.log so
+    /// a field report can be diagnosed with
+    /// `devicectl device copy from --domain-type appDataContainer`.
+    nonisolated static func log(_ message: String) {
+        #if DEBUG
+        let line = "\(Date.now.formatted(.iso8601)) [PIP] \(message)\n"
+        print("[Lucent]" + line, terminator: "")
+        let url = URL.documentsDirectory.appending(path: "pip.log")
+        if let handle = try? FileHandle(forWritingTo: url) {
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? Data(line.utf8).write(to: url)
+        }
+        #endif
+    }
 
     /// Single frame source shared by every in-app display layer and PiP.
     let frameSource = PIPFrameSource()
@@ -96,7 +115,12 @@ final class PIPController: NSObject {
 
 extension PIPController: AVPictureInPictureControllerDelegate {
     nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ c: AVPictureInPictureController) {
+        Self.log("didStart")
         Task { @MainActor in self.isActive = true }
+    }
+
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ c: AVPictureInPictureController) {
+        Self.log("willStop appState=\(UIApplication.shared.applicationState.rawValue)")
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ c: AVPictureInPictureController) {
@@ -104,6 +128,19 @@ extension PIPController: AVPictureInPictureControllerDelegate {
             self.isActive = false
             let returningToApp = self.restoreRequested
             self.restoreRequested = false
+            Self.log("didStop returningToApp=\(returningToApp) appState=\(UIApplication.shared.applicationState.rawValue) mounted=\(self.inAppVideoMounted)")
+            // Belt and braces: whatever the callback order, a PiP window
+            // that stopped while the app stays in the background was closed
+            // with its X. Nothing is on screen, so nothing should be audible.
+            self.backgroundStopCheck?.cancel()
+            self.backgroundStopCheck = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, !Task.isCancelled else { return }
+                if UIApplication.shared.applicationState != .active {
+                    Self.log("still backgrounded 2s after stop → tearing down")
+                    self.onShouldTearDownPlayer?()
+                }
+            }
             if !returningToApp {
                 // Closed with the X: stop the stream outright. Previously
                 // this only tore down when nothing in-app was mounted, so
@@ -123,6 +160,7 @@ extension PIPController: AVPictureInPictureControllerDelegate {
         // The main-actor hop is enqueued before AVKit's subsequent didStop
         // hop, so the flag is set by the time didStop reads it. Completing
         // synchronously avoids sending the non-Sendable handler across actors.
+        Self.log("restoreUserInterface")
         Task { @MainActor in
             self.restoreRequested = true
             if !self.inAppVideoMounted { self.onRestoreUserInterface?() }
@@ -134,10 +172,8 @@ extension PIPController: AVPictureInPictureControllerDelegate {
         _ c: AVPictureInPictureController,
         failedToStartPictureInPictureWithError error: Error
     ) {
-        Task { @MainActor in
-            self.isActive = false
-            print("[Lucent][PIP] failed to start: \(error)")
-        }
+        Self.log("failedToStart \(error)")
+        Task { @MainActor in self.isActive = false }
     }
 }
 

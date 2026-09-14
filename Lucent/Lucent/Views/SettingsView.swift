@@ -161,7 +161,7 @@ struct SettingsView: View {
                         ForEach(DeinterlaceMode.allCases) { Text($0.displayName).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    Text("Broadcasts are interlaced. Fast is light on the battery and looks sharp on a phone or tablet; Quality is smoother on a big screen but runs the device much hotter; Off shows combing on motion.")
+                    Text("Broadcasts are interlaced. Fast blends the two fields and is the coolest-running option on a phone or tablet; Quality is sharper in motion on a big screen but runs the device hotter; Off shows combing on motion.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

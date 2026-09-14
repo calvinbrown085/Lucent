@@ -140,11 +140,17 @@ struct DemoVideoView: View {
 
     private func fullOverlay(size: CGSize) -> some View {
         let scale = max(0.55, min(1.0, size.width / 1920))
+        // Portrait phone: the Now Playing chips already carry the channel and
+        // this row would sit under the status bar, so the station bug and
+        // clock are dropped there.
+        let showTopRow = size.width >= 700
         return VStack(spacing: 0) {
-            HStack(alignment: .top) {
-                channelBug(scale: scale)
-                Spacer()
-                clock(scale: scale)
+            if showTopRow {
+                HStack(alignment: .top) {
+                    channelBug(scale: scale)
+                    Spacer()
+                    clock(scale: scale)
+                }
             }
             Spacer()
             ident(scale: scale)
@@ -159,6 +165,7 @@ struct DemoVideoView: View {
         }
         .padding(.horizontal, 64 * scale)
         .padding(.vertical, 52 * scale)
+        .safeAreaPadding(.all)
     }
 
     private var compactOverlay: some View {

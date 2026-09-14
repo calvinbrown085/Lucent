@@ -265,6 +265,7 @@ struct GuideView: View {
         .fullScreenCover(item: $presentedChannel) { channel in
             NowPlayingView(channel: channel)
                 .environment(appModel)
+                .environment(\.layoutMetrics, metrics)
         }
         .sheet(item: $detailProgram) { program in
             ProgramDetailView(program: program)

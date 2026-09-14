@@ -2,9 +2,9 @@ import Foundation
 import Observation
 
 /// Which VLC deinterlacer runs on interlaced (1080i / 480i) broadcasts.
-/// Profiled on iPhone 16 Pro Max: VLC's default "x" filter was ~40% of all
-/// app CPU on a 1080i stream — by far the biggest single cost, ahead of the
-/// MPEG-2 decode itself.
+/// Measured on iPhone 16 Pro Max, 1080i, process CPU as % of one core:
+/// x 64 · linear 66 (double-rate, 60 fps) · discard 54 · off 50 · blend 42.
+/// Software MPEG-2 decode sets the ~50% floor; blend is at it.
 enum DeinterlaceMode: String, CaseIterable, Identifiable, Sendable {
     case off, fast, quality
 
@@ -22,7 +22,7 @@ enum DeinterlaceMode: String, CaseIterable, Identifiable, Sendable {
     var vlcFilterName: String? {
         switch self {
         case .off: return nil
-        case .fast: return "linear"
+        case .fast: return "blend"
         case .quality: return "x"
         }
     }

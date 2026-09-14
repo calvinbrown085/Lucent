@@ -23,6 +23,10 @@ struct NowPlayingView: View {
     /// (iPhone) rather than as a sibling overlay panel (tvOS / iPad).
     private var miniGuideAsSheet: Bool { metrics.miniGuideWidth == nil }
 
+    /// iPhone: chips don't fit in one row, so the overlay stacks — channel
+    /// row on top, program chip full width, tools in a scrolling strip.
+    private var compactOverlay: Bool { metrics.miniGuideWidth == nil }
+
     private var miniGuideSheetBinding: Binding<Bool> {
         Binding(
             get: { miniGuideOpen && miniGuideAsSheet },
@@ -348,16 +352,17 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var overlay: some View {
         VStack {
-            HStack(alignment: .top, spacing: 14) {
+            HStack(alignment: .center, spacing: compactOverlay ? 10 : 14) {
                 #if !os(tvOS)
                 doneButton
                 #endif
                 channelChip
-                if let prev = appModel.previousChannel {
+                    .fixedSize()
+                if !compactOverlay, let prev = appModel.previousChannel {
                     previousChannelChip(prev)
                 }
-                Spacer()
-                if let signal {
+                Spacer(minLength: 8)
+                if !compactOverlay, let signal {
                     SignalChip(status: signal)
                 }
                 #if !os(tvOS)
@@ -366,13 +371,35 @@ struct NowPlayingView: View {
                 favoriteButton
             }
             Spacer()
-            HStack(alignment: .bottom, spacing: 14) {
-                programChip
-                Spacer()
-                captionsChip
-                audioChip
-                goToChip
-                sleepChip
+            if compactOverlay {
+                VStack(alignment: .leading, spacing: 10) {
+                    programChip
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            if let prev = appModel.previousChannel {
+                                previousChannelChip(prev)
+                            }
+                            if let signal {
+                                SignalChip(status: signal, compact: true)
+                            }
+                            captionsChip
+                            audioChip
+                            goToChip
+                            sleepChip
+                        }
+                        .fixedSize()
+                    }
+                    .scrollClipDisabled()
+                }
+            } else {
+                HStack(alignment: .bottom, spacing: 14) {
+                    programChip
+                    Spacer()
+                    captionsChip
+                    audioChip
+                    goToChip
+                    sleepChip
+                }
             }
         }
         .padding(metrics.contentHorizontalPadding)
@@ -403,17 +430,19 @@ struct NowPlayingView: View {
     #endif
 
     private var channelChip: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: compactOverlay ? 8 : 12) {
             Text(currentChannel.guideNumber)
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .font(.system(size: compactOverlay ? 22 : 36, weight: .bold, design: .rounded))
                 .monospacedDigit()
+                .lineLimit(1)
                 .foregroundStyle(GuideTokens.text)
             Text(currentChannel.guideName)
-                .font(.title3.weight(.medium))
+                .font(compactOverlay ? .subheadline.weight(.medium) : .title3.weight(.medium))
+                .lineLimit(1)
                 .foregroundStyle(GuideTokens.text2)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 14)
+        .padding(.horizontal, compactOverlay ? 14 : 24)
+        .padding(.vertical, compactOverlay ? 10 : 14)
         // One glass material across every overlay chip — this is the app's
         // navigation layer, where Liquid Glass belongs (never on content).
         .glassEffect(.regular, in: .capsule)
@@ -422,7 +451,7 @@ struct NowPlayingView: View {
     private var programChip: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(nowPlaying?.title ?? "—")
-                .font(.title2.weight(.semibold))
+                .font(compactOverlay ? .headline : .title2.weight(.semibold))
                 .lineLimit(1)
                 .foregroundStyle(GuideTokens.text)
             if let p = nowPlaying {
@@ -445,15 +474,17 @@ struct NowPlayingView: View {
                 }
                 .font(.subheadline)
                 .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(GuideTokens.text3)
                 ProgressView(value: progress(of: p))
                     .tint(GuideTokens.accent)
                     .frame(maxWidth: 320)
             }
         }
-        .frame(maxWidth: 700, alignment: .leading)
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
+        .frame(maxWidth: compactOverlay ? .infinity : 700, alignment: .leading)
+        .padding(.horizontal, compactOverlay ? 16 : 24)
+        .padding(.vertical, compactOverlay ? 12 : 16)
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
     }
 
@@ -597,9 +628,9 @@ struct NowPlayingView: View {
             showOverlay()
         } label: {
             Image(systemName: isFav ? "star.fill" : "star")
-                .font(.title)
+                .font(compactOverlay ? .title3 : .title)
                 .foregroundStyle(isFav ? GuideTokens.accent2 : GuideTokens.text)
-                .padding(20)
+                .padding(compactOverlay ? 14 : 20)
                 .glassEffect(.regular, in: .circle)
         }
         .buttonStyle(.plain)
@@ -614,9 +645,9 @@ struct NowPlayingView: View {
                 showOverlay()
             } label: {
                 Image(systemName: appModel.pip.isActive ? "pip.exit" : "pip.enter")
-                    .font(.title)
+                    .font(compactOverlay ? .title3 : .title)
                     .foregroundStyle(appModel.pip.isPossible ? GuideTokens.text : GuideTokens.text4)
-                    .padding(20)
+                    .padding(compactOverlay ? 14 : 20)
                     .glassEffect(.regular, in: .circle)
             }
             .buttonStyle(.plain)
@@ -654,6 +685,10 @@ struct NowPlayingView: View {
     private func scheduleHide() {
         hideTask?.cancel()
         guard !miniGuideOpen else { return }
+        #if DEBUG
+        // Screenshot hook: LUCENT_KEEP_OVERLAY=1 pins the chrome on screen.
+        if ProcessInfo.processInfo.environment["LUCENT_KEEP_OVERLAY"] != nil { return }
+        #endif
         hideTask = Task {
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled {
@@ -717,6 +752,7 @@ struct NowPlayingView: View {
 /// the decoder can actually use. Colour follows the worse of the two.
 struct SignalChip: View {
     let status: HDHRTunerStatus
+    var compact: Bool = false
 
     private var strength: Int { status.SignalStrengthPercent ?? 0 }
     private var quality: Int { status.SignalQualityPercent ?? 0 }
@@ -747,14 +783,22 @@ struct SignalChip: View {
                         .frame(width: 5, height: CGFloat(6 + i * 4))
                 }
             }
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Signal \(strength)%")
-                Text("Quality \(quality)%")
+            if compact {
+                Text("\(quality)%")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(GuideTokens.text2)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Signal \(strength)%")
+                    Text("Quality \(quality)%")
+                }
+                .font(.caption2.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(GuideTokens.text2)
             }
-            .font(.caption2.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(GuideTokens.text2)
         }
+        .fixedSize()
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .glassEffect(.regular, in: .capsule)

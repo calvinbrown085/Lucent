@@ -169,6 +169,10 @@ A/V sync is handled at runtime, not via `audio-desync`: `AudioLatencyMonitor` tr
 - **iPad docked player**: `LayoutMetrics.supportsDockedPlayer` + `SettingsStore.dockedPlayerEnabled` make tunes land in `DockedPlayerPane` (a sibling column in `RootView`) instead of fullscreen. `AppModel.isFullscreenPresented` / `dockedPlayerVisible` guarantee only one `VLCPlayerView` is mounted at a time (drawable invariant). The guide hero hides its live preview while the dock is visible.
 - `Program` carries `year` and `credits` (migration `v3_program_metadata`); XMLTV `<credits>`/`<date>` and Gracenote `releaseYear` feed them. `ProgramDetailView` shows them plus "Also airing" via `EPGStore.airings(ofTitle:)`.
 
+### Deinterlacing (profiled)
+
+`SettingsStore.deinterlaceMode` → `PlayerCoordinator.deinterlaceFilter` → `setDeinterlaceFilter` on every new player. Measured on iPhone 16 Pro Max, 1080i channel, process CPU as % of one core: VLC default "x"+NV12 (what shipped first) 72; x 64; linear 66 (double-rate, 60 fps out); discard 54; off 50; **blend 42**. Software MPEG-2 decode is the ~50% floor (VideoToolbox has no MPEG-2 on iOS). iOS defaults to Fast = blend; tvOS to Quality = x. Debug builds accept `LUCENT_DEINTERLACE=` / `LUCENT_CHROMA=NV12` / `LUCENT_AUTOWATCH=<number>` env vars for on-device A/B via `devicectl … --console`, and the frame source logs fps / process CPU every 10 s.
+
 ### Backgrounding
 
 `RootView` forwards `scenePhase` to `AppModel.sceneDidEnterBackground` / `sceneDidBecomeActive`. tvOS tears the player down immediately (no PiP exists, so audio under the home screen is a bug); iOS waits 1.5 s and tears down only if system PiP didn't take the stream. The stopped channel is remembered and re-tuned on return **only** if a player surface (fullscreen, dock, pending presentation) is still up.

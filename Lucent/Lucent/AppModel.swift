@@ -100,6 +100,7 @@ final class AppModel {
         #if !os(tvOS)
         player.usesMemoryOutput = settings.pipEnabled
         pip.onShouldTearDownPlayer = { [weak self] in
+            PIPController.log("tearDown requested by PiP")
             self?.player.tearDown()
         }
         pip.onRestoreUserInterface = { [weak self] in
@@ -148,6 +149,7 @@ final class AppModel {
         // Demo mode: skip discovery, the tuner and the network entirely.
         if isDemoMode {
             await bootstrapDemo()
+            resolvePendingWatch()
             return
         }
 
@@ -202,22 +204,7 @@ final class AppModel {
             bootstrapError = String(describing: error)
         }
 
-        if let pending = pendingWatchChannelID {
-            pendingWatchChannelID = nil
-            watch(channelID: pending)
-        }
-        if let number = pendingWatchNumber {
-            pendingWatchNumber = nil
-            watch(number: number)
-        }
-        #if DEBUG
-        // Profiling hook: `xctrace record --launch --env LUCENT_AUTOWATCH=8.1`
-        // starts the app under Instruments and lands straight on a stream.
-        // Empty value resumes the last-watched channel.
-        if pendingWatchNumber == nil, let auto = ProcessInfo.processInfo.environment["LUCENT_AUTOWATCH"] {
-            watch(number: auto)
-        }
-        #endif
+        resolvePendingWatch()
         await refreshGuide()
     }
 
@@ -546,6 +533,26 @@ final class AppModel {
     /// Empty string means "resume last watched / first channel".
     private var pendingWatchNumber: String?
 
+    /// Deliver any watch request that arrived before the lineup existed.
+    /// Runs at the end of both the real and demo bootstrap paths.
+    private func resolvePendingWatch() {
+        if let pending = pendingWatchChannelID {
+            pendingWatchChannelID = nil
+            watch(channelID: pending)
+        }
+        if let number = pendingWatchNumber {
+            pendingWatchNumber = nil
+            watch(number: number)
+        }
+        #if DEBUG
+        // Profiling / screenshot hook: launch with LUCENT_AUTOWATCH=8.1 to land
+        // straight on a stream. Empty value resumes the last-watched channel.
+        if let auto = ProcessInfo.processInfo.environment["LUCENT_AUTOWATCH"] {
+            watch(number: auto)
+        }
+        #endif
+    }
+
     private func watch(number: String?) {
         let target: Channel?
         if let number, !number.isEmpty {
@@ -593,6 +600,9 @@ final class AppModel {
     private func stopForBackground() {
         guard let ch = player.activeChannel else { return }
         channelToResume = ch
+        #if !os(tvOS)
+        PIPController.log("background stop (pip not active)")
+        #endif
         player.tearDown()
     }
 
